@@ -1,0 +1,7 @@
+{
+  "name": "RV-C Integration",
+  "content_in_root": false,
+  "domain": "rvc",
+  "country": "US",
+  "homeassistant": "2024.8.0"
+}

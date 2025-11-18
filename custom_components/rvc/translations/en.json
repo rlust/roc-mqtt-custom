@@ -1,0 +1,15 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Set up RV-C",
+        "description": "Configure MQTT options for RV-C integration.",
+        "data": {
+          "topic_prefix": "MQTT topic prefix",
+          "auto_discovery": "Enable auto discovery"
+        }
+      }
+    }
+  },
+  "title": "RV-C Integration"
+}

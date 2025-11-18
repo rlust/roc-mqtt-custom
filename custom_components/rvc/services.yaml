@@ -1,0 +1,14 @@
+rvc.ramp_up:
+  description: "Ramp brightness up to target"
+  fields:
+    entity_id:
+      description: "Target light"
+      example: "light.rvc_light_36"
+    duration:
+      description: "Ramp duration in seconds"
+      example: 5
+      required: true
+      selector:
+        number:
+          min: 1
+          max: 60
