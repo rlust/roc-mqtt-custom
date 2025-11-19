@@ -108,6 +108,7 @@ class RVCLight(LightEntity):
     """Representation of an RV-C dimmer light."""
 
     _attr_supported_color_modes = {ColorMode.BRIGHTNESS}
+    _attr_color_mode = ColorMode.BRIGHTNESS
 
     def __init__(self, name: str, instance_id: str, topic_prefix: str) -> None:
         self._attr_name = name
