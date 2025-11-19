@@ -25,40 +25,70 @@ CC_RAMP_DOWN = 4
 CC_STOP = 5
 CC_TOGGLE = 24
 
-# Human-friendly labels for dimmer instances (from deviceNameMapping)
+# Human-friendly labels for dimmer/light instances (from actual RV device mapping)
 DIMMER_INSTANCE_LABELS: dict[str, str] = {
-    "25": "Bedroom Ceiling Lights A",
-    "26": "Over Bed Ceiling Lights B",
-    "27": "Bedroom Accent Lights",
-    "28": "Bedroom Vanity",
-    "29": "Courtesy Lights",
-    "30": "Rear Bath Ceiling Lights",
-    # 31 not present in mapping
-    "32": "Bedroom Floor Lights A",
-    "33": "Over Bed Floor Lights B",
-    "34": "Living Room Ceiling Lights C",
-    "35": "Living Room Accent Lights D",
-    "36": "Living Room Vanity E",
-    "37": "Kitchen Ceiling Lights F",
-    "38": "Kitchen Accent Lights G",
-    "39": "Kitchen Vanity H",
-    "40": "Hallway Ceiling Lights I",
-    "41": "Hallway Accent Lights J",
-    "42": "Hallway Vanity K",
-    "43": "Front Bedroom Ceiling Lights L",
-    "44": "Front Bedroom Accent Lights M",
-    "45": "Front Bedroom Vanity N",
-    "46": "Back Bath Ceiling Lights O",
-    "47": "Living Room Floor Lights P",
-    "48": "Kitchen Floor Lights Q",
-    "49": "Hallway Floor Lights R",
-    "50": "Front Bedroom Floor Lights S",
-    "51": "Bedroom Floor Lights T",
-    "52": "Living Room Accent Lights U",
-    "53": "Kitchen Vanity V",
-    "54": "Kitchen Accent Lights W",
-    "55": "Hallway Vanity X",
-    "56": "Back Bath Ceiling Lights Y",
-    "57": "Hallway Accent Lights Z",
-    "58": "Kitchen Vanity A",
+    # Lights (25-60)
+    "25": "Bed Ceiling Lts A",
+    "26": "Bed Ceiling Lts B",
+    "27": "Bed Accent",
+    "28": "Bed Vanity",
+    "29": "Courtesy",
+    "30": "RR Bath Ceiling",
+    "31": "RR Bath Lav Lts",
+    "32": "RR Bath Accent",
+    "33": "Mid Bath Ceiling",
+    "34": "Mid Bath Accent",
+    "35": "Entry Ceiling",
+    "36": "Living Edge",
+    "37": "Livrm Ceiling A",
+    "38": "Livrm Ceiling B",
+    "39": "Livrm Accent A",
+    "40": "Livrm Accent B",
+    "41": "Sofa Ceiling",
+    "42": "Kitchen Ceiling",
+    # 43 missing
+    "44": "D/S Slide",
+    "45": "Dinette",
+    "46": "Sink",
+    "47": "Midship",
+    # 48 missing
+    "49": "Door Awning Extend",
+    "50": "Door Awning Retract",
+    "51": "Awning D/S",
+    "52": "Awning P/S",
+    "53": "Cargo",
+    "54": "Under Slide",
+    # 55 missing
+    "56": "Bed Reading",
+    "57": "Security D/S",
+    "58": "Security P/S",
+    "59": "Security Motion",
+    "60": "Porch",
+}
+
+# Switch/relay instance labels (non-dimmable devices)
+SWITCH_INSTANCE_LABELS: dict[str, str] = {
+    "13": "Satellite Dome",
+    "14": "Entry Door",
+    "15": "Gen Stop",
+    "16": "Water Pump",
+    "17": "Entry Door Unlock",
+    "18": "Gen Start",
+}
+
+# Cover/slide/awning instance labels
+COVER_INSTANCE_LABELS: dict[str, str] = {
+    # Awnings (extend/retract/stop)
+    "19": "Rear Awning",
+    "22": "Front Awning",
+    "49": "Door Awning",
+    # Slides (extend/retract)
+    "181": "Kitchen Slide",
+    "182": "Kitchen Slide",  # Retract command
+    "183": "Super Slide",
+    "184": "Super Slide",  # Retract command
+    "185": "Vanity Slide",
+    "186": "Vanity Slide",  # Retract command
+    "187": "Bed Slide",
+    "188": "Bed Slide",  # Retract command
 }
