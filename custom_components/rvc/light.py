@@ -14,6 +14,7 @@ from homeassistant.components import mqtt
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
+from homeassistant.helpers import entity_platform
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import (
@@ -66,6 +67,35 @@ async def async_setup_entry(
 
     unsub = await async_dispatcher_connect(hass, SIGNAL_DISCOVERY, _discovery_callback)
     data["unsub_dispatchers"].append(unsub)
+
+    # Register custom services
+    platform = entity_platform.async_get_current_platform()
+
+    platform.async_register_entity_service(
+        "ramp_up",
+        {
+            "duration": {
+                "type": int,
+                "required": True,
+                "min": 1,
+                "max": 60,
+            }
+        },
+        "async_ramp_up",
+    )
+
+    platform.async_register_entity_service(
+        "ramp_down",
+        {
+            "duration": {
+                "type": int,
+                "required": True,
+                "min": 1,
+                "max": 60,
+            }
+        },
+        "async_ramp_down",
+    )
 
 
 class RVCLight(LightEntity):

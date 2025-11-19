@@ -81,9 +81,10 @@ def _extract_sensor_definitions(
     if message_name.startswith("TANK_STATUS"):
         if "relative level" in payload:
             tank_type = payload.get("instance definition", "Tank").replace(" tank", "")
+            # BACKWARD COMPATIBILITY: Use old unique_id format to avoid orphaning existing entities
             sensors.append({
                 "unique_key": f"{inst_str}_tank_level",
-                "unique_id": f"rvc_tank_{inst_str}_level",
+                "unique_id": f"rvc_sensor_{inst_str}",  # Keep old format for compatibility
                 "name": f"{tank_type} Tank Level",
                 "value": payload["relative level"],
                 "unit": PERCENTAGE,
