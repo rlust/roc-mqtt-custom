@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from typing import Any
 
 from homeassistant.components.light import (
@@ -200,12 +201,19 @@ class RVCLight(LightEntity):
             desired_level = int(round(brightness / 2.55))
             desired_level = max(0, min(100, desired_level))
 
+            # Match exact payload format from RVC_PROJECT_NOTES.md
             payload = {
                 "command": CC_SET_BRIGHTNESS,  # 0: Set Brightness
-                "instance": int(self._instance),
-                "name": "DC_DIMMER_COMMAND_2",
-                "dgn": "1FEDB",
+                "command definition": "set brightness",
+                "delay/duration": 255,  # 255 = immediate/max
                 "desired level": desired_level,  # 0–100
+                "dgn": "1FEDB",
+                "group": "11111111",  # All groups
+                "instance": int(self._instance),
+                "interlock": "00",  # No interlock
+                "interlock definition": "no interlock active",
+                "name": "DC_DIMMER_COMMAND_2",
+                "timestamp": f"{time.time():.6f}",
             }
 
             _LOGGER.debug(
@@ -214,12 +222,19 @@ class RVCLight(LightEntity):
             )
         else:
             # Non-dimmable (relay): use command 2 (on delay) with full brightness
+            # Match exact payload format from RVC_PROJECT_NOTES.md
             payload = {
                 "command": CC_ON_DELAY,  # 2: On (Delay)
-                "instance": int(self._instance),
-                "name": "DC_DIMMER_COMMAND_2",
-                "dgn": "1FEDB",
+                "command definition": "on delay",
+                "delay/duration": 255,  # 255 = immediate/max
                 "desired level": 100,  # Always full for relays
+                "dgn": "1FEDB",
+                "group": "11111111",  # All groups
+                "instance": int(self._instance),
+                "interlock": "00",  # No interlock
+                "interlock definition": "no interlock active",
+                "name": "DC_DIMMER_COMMAND_2",
+                "timestamp": f"{time.time():.6f}",
             }
 
             _LOGGER.debug(
@@ -243,12 +258,19 @@ class RVCLight(LightEntity):
         self._attr_is_on = False
         self._attr_brightness = 0
 
-        # Match actual MQTT payload format from example
+        # Match exact payload format from RVC_PROJECT_NOTES.md
         payload = {
-            "command": CC_OFF,  # 3: Off (actual implementation, not spec)
-            "instance": int(self._instance),
-            "name": "DC_DIMMER_COMMAND_2",
+            "command": CC_OFF,  # 3: Off
+            "command definition": "off",
+            "delay/duration": 255,  # 255 = immediate/max
+            "desired level": 0,  # 0 for off
             "dgn": "1FEDB",
+            "group": "11111111",  # All groups
+            "instance": int(self._instance),
+            "interlock": "00",  # No interlock
+            "interlock definition": "no interlock active",
+            "name": "DC_DIMMER_COMMAND_2",
+            "timestamp": f"{time.time():.6f}",
         }
 
         _LOGGER.debug(
@@ -268,13 +290,19 @@ class RVCLight(LightEntity):
 
     async def async_ramp_up(self, duration: int = 5) -> None:
         """Ramp brightness up over specified duration."""
-        # Match actual MQTT payload format from example
+        # Match exact payload format from RVC_PROJECT_NOTES.md
         payload = {
             "command": CC_RAMP_UP,  # 19: Ramp Up
-            "instance": int(self._instance),
-            "name": "DC_DIMMER_COMMAND_2",
+            "command definition": "ramp up",
+            "delay/duration": duration,  # Use specified duration
+            "desired level": 100,  # Ramp to full
             "dgn": "1FEDB",
-            "duration": duration,
+            "group": "11111111",  # All groups
+            "instance": int(self._instance),
+            "interlock": "00",  # No interlock
+            "interlock definition": "no interlock active",
+            "name": "DC_DIMMER_COMMAND_2",
+            "timestamp": f"{time.time():.6f}",
         }
 
         await mqtt.async_publish(
@@ -287,13 +315,19 @@ class RVCLight(LightEntity):
 
     async def async_ramp_down(self, duration: int = 5) -> None:
         """Ramp brightness down over specified duration."""
-        # Match actual MQTT payload format from example
+        # Match exact payload format from RVC_PROJECT_NOTES.md
         payload = {
             "command": CC_RAMP_DOWN,  # 20: Ramp Down
-            "instance": int(self._instance),
-            "name": "DC_DIMMER_COMMAND_2",
+            "command definition": "ramp down",
+            "delay/duration": duration,  # Use specified duration
+            "desired level": 0,  # Ramp to off
             "dgn": "1FEDB",
-            "duration": duration,
+            "group": "11111111",  # All groups
+            "instance": int(self._instance),
+            "interlock": "00",  # No interlock
+            "interlock definition": "no interlock active",
+            "name": "DC_DIMMER_COMMAND_2",
+            "timestamp": f"{time.time():.6f}",
         }
 
         await mqtt.async_publish(
