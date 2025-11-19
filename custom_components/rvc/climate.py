@@ -9,6 +9,7 @@ from homeassistant.components.climate.const import (
     HVACMode,
     ClimateEntityFeature,
 )
+from homeassistant.const import UnitOfTemperature
 from homeassistant.components import mqtt
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -66,6 +67,7 @@ class RVCClimate(ClimateEntity):
         self._attr_hvac_mode = HVACMode.AUTO
         self._attr_target_temperature = 22.0
         self._attr_current_temperature = None
+        self._attr_temperature_unit = UnitOfTemperature.FAHRENHEIT  # RV-C uses Fahrenheit
 
     @property
     def unique_id(self) -> str:

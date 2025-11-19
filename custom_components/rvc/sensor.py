@@ -56,12 +56,13 @@ async def async_setup_entry(
                     device_class=sensor_def.get("device_class"),
                     unit=sensor_def.get("unit"),
                     state_class=sensor_def.get("state_class"),
+                    initial_value=sensor_def["value"],  # Set initial value
                 )
                 entities[unique_key] = entity
                 new_entities.append(entity)
-
-            # Update value
-            entity.update_value(sensor_def["value"])
+            else:
+                # Only update existing entities (they have hass set)
+                entity.update_value(sensor_def["value"])
 
         if new_entities:
             async_add_entities(new_entities)
@@ -225,11 +226,12 @@ class RVCSensor(SensorEntity):
         device_class: str | None = None,
         unit: str | None = None,
         state_class: str | None = None,
+        initial_value: Any = None,
     ) -> None:
         """Initialize the sensor."""
         self._attr_name = name
         self._attr_unique_id = unique_id
-        self._attr_native_value = None
+        self._attr_native_value = initial_value
         self._attr_native_unit_of_measurement = unit
         self._attr_device_class = device_class
         self._attr_state_class = state_class
