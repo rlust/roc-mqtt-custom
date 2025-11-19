@@ -118,7 +118,7 @@ class RVCMQTTHandler:
             "payload": payload,
         }
 
-        _LOGGER.info(
+        _LOGGER.debug(
             "RVC MQTT: dispatching discovery: type=%s instance=%s name=%s",
             device_type,
             instance_str,
