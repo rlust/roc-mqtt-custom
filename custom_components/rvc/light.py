@@ -55,6 +55,10 @@ async def async_setup_entry(
 
         entity = entities.get(inst_str)
         if entity is None:
+            _LOGGER.debug(
+                "Creating new light entity: instance=%s, name='%s', label='%s'",
+                inst_str, name, label
+            )
             entity = RVCLight(
                 name=name,
                 instance_id=inst_str,
@@ -62,6 +66,8 @@ async def async_setup_entry(
             )
             entities[inst_str] = entity
             async_add_entities([entity])
+        else:
+            _LOGGER.debug("Updating existing light entity: instance=%s", inst_str)
 
         entity.handle_mqtt(payload)
 
@@ -109,6 +115,10 @@ class RVCLight(LightEntity):
         self._topic_prefix = topic_prefix
         self._attr_is_on = False
         self._attr_brightness = 255
+        _LOGGER.info(
+            "Initialized RVCLight: name='%s', instance=%s, topic_prefix='%s'",
+            name, instance_id, topic_prefix
+        )
 
     @property
     def unique_id(self) -> str:
@@ -116,8 +126,8 @@ class RVCLight(LightEntity):
 
     @property
     def _command_topic(self) -> str:
-        # Match actual MQTT topic format: RVC/DC_DIMMER_COMMAND_2/36/set
-        return f"RVC/DC_DIMMER_COMMAND_2/{self._instance}/set"
+        # Use configured topic prefix (case-sensitive)
+        return f"{self._topic_prefix}/DC_DIMMER_COMMAND_2/{self._instance}/set"
 
     def handle_mqtt(self, payload: dict[str, Any]) -> None:
         """Update internal state from an MQTT payload.
@@ -126,6 +136,10 @@ class RVCLight(LightEntity):
         - Raw RV-C JSON (with 'operating status (brightness)')
         - Simplified payloads with 'state' and 'brightness'
         """
+        _LOGGER.debug(
+            "Light %s received MQTT payload: %s",
+            self._instance, payload
+        )
 
         # Raw RV-C dimmer payload: "operating status (brightness)" 0–100
         if "operating status (brightness)" in payload:
@@ -179,6 +193,11 @@ class RVCLight(LightEntity):
             "brightness": pct,  # 0–100
         }
 
+        _LOGGER.debug(
+            "Light %s turning ON: brightness=%d%% (HA=%d), publishing to %s: %s",
+            self._instance, pct, brightness, self._command_topic, payload
+        )
+
         await mqtt.async_publish(
             self.hass,
             self._command_topic,
@@ -202,6 +221,11 @@ class RVCLight(LightEntity):
             "name": "DC_DIMMER_COMMAND_2",
             "dgn": "1FEDB",
         }
+
+        _LOGGER.debug(
+            "Light %s turning OFF: publishing to %s: %s",
+            self._instance, self._command_topic, payload
+        )
 
         await mqtt.async_publish(
             self.hass,

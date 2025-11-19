@@ -27,7 +27,10 @@ class RVCMQTTHandler:
     async def async_subscribe(self) -> None:
         """Subscribe to RV-C topics."""
         topic = f"{self.prefix}/#"
-        _LOGGER.info("RVC MQTT: subscribing to topic: %s", topic)
+        _LOGGER.info(
+            "RVC MQTT Handler: subscribing to topic pattern '%s' (prefix='%s', discovery=%s)",
+            topic, self.prefix, self.discovery_enabled
+        )
         unsub = await mqtt.async_subscribe(self.hass, topic, self._message_received, 0)
         self._unsubs.append(unsub)
 
@@ -102,6 +105,11 @@ class RVCMQTTHandler:
                 instance_str,
             )
             return
+
+        _LOGGER.debug(
+            "RVC MQTT: classified message as type='%s' (topic=%s, name=%s, instance=%s)",
+            device_type, msg.topic, raw_name, instance_str
+        )
 
         discovery = {
             "type": device_type,
