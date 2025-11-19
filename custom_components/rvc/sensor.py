@@ -66,7 +66,7 @@ async def async_setup_entry(
         if new_entities:
             async_add_entities(new_entities)
 
-    unsub = await async_dispatcher_connect(hass, SIGNAL_DISCOVERY, _discovery_callback)
+    unsub = async_dispatcher_connect(hass, SIGNAL_DISCOVERY, _discovery_callback)
     data["unsub_dispatchers"].append(unsub)
 
 

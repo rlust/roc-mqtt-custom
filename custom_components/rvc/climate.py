@@ -49,7 +49,7 @@ async def async_setup_entry(
 
         entity.handle_mqtt(payload)
 
-    unsub = await async_dispatcher_connect(hass, SIGNAL_DISCOVERY, _discovery_callback)
+    unsub = async_dispatcher_connect(hass, SIGNAL_DISCOVERY, _discovery_callback)
     data["unsub_dispatchers"].append(unsub)
 
 
