@@ -270,7 +270,7 @@ class RVCLight(LightEntity):
         """Ramp brightness up over specified duration."""
         # Match actual MQTT payload format from example
         payload = {
-            "command": CC_RAMP_UP,  # 4: Ramp Up
+            "command": CC_RAMP_UP,  # 19: Ramp Up
             "instance": int(self._instance),
             "name": "DC_DIMMER_COMMAND_2",
             "dgn": "1FEDB",
@@ -289,7 +289,7 @@ class RVCLight(LightEntity):
         """Ramp brightness down over specified duration."""
         # Match actual MQTT payload format from example
         payload = {
-            "command": CC_RAMP_DOWN,  # 5: Ramp Down
+            "command": CC_RAMP_DOWN,  # 20: Ramp Down
             "instance": int(self._instance),
             "name": "DC_DIMMER_COMMAND_2",
             "dgn": "1FEDB",
