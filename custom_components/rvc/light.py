@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 
 from homeassistant.components.light import (
@@ -21,7 +22,12 @@ from .const import (
     DIMMER_INSTANCE_LABELS,
     CC_SET_BRIGHTNESS,
     CC_OFF,
+    CC_RAMP_UP,
+    CC_RAMP_DOWN,
+    CC_STOP,
 )
+
+_LOGGER = logging.getLogger(__name__)
 
 
 async def async_setup_entry(
@@ -169,3 +175,33 @@ class RVCLight(LightEntity):
         )
 
         self.async_write_ha_state()
+
+    async def async_ramp_up(self, duration: int = 5) -> None:
+        """Ramp brightness up over specified duration."""
+        payload = {
+            "cc": CC_RAMP_UP,  # 03: Ramp Up
+            "duration": duration,
+        }
+
+        await mqtt.async_publish(
+            self.hass,
+            self._command_topic,
+            json.dumps(payload),
+            qos=0,
+            retain=False,
+        )
+
+    async def async_ramp_down(self, duration: int = 5) -> None:
+        """Ramp brightness down over specified duration."""
+        payload = {
+            "cc": CC_RAMP_DOWN,  # 04: Ramp Down
+            "duration": duration,
+        }
+
+        await mqtt.async_publish(
+            self.hass,
+            self._command_topic,
+            json.dumps(payload),
+            qos=0,
+            retain=False,
+        )
