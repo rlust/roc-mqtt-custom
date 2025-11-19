@@ -31,6 +31,14 @@ CC_RAMP_UP = 19        # Ramp Up
 CC_RAMP_DOWN = 20      # Ramp Down
 CC_RAMP_UP_DOWN = 21   # Ramp Down/Up
 
+# Dimmable light instances (can adjust brightness with command 0)
+# Non-dimmable instances (25-35) are relays that only support on/off with command 2
+DIMMABLE_LIGHTS = {
+    "25", "26", "27", "28", "29",  # Bedroom area
+    "30", "31", "32", "33", "34",  # Bathroom areas
+    "35",                           # Entry
+}
+
 # Human-friendly labels for dimmer/light instances (from actual RV device mapping)
 DIMMER_INSTANCE_LABELS: dict[str, str] = {
     # Lights (25-60)

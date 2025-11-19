@@ -21,7 +21,9 @@ from .const import (
     DOMAIN,
     SIGNAL_DISCOVERY,
     DIMMER_INSTANCE_LABELS,
+    DIMMABLE_LIGHTS,
     CC_SET_BRIGHTNESS,
+    CC_ON_DELAY,
     CC_OFF,
     CC_RAMP_UP,
     CC_RAMP_DOWN,
@@ -105,10 +107,7 @@ async def async_setup_entry(
 
 
 class RVCLight(LightEntity):
-    """Representation of an RV-C dimmer light."""
-
-    _attr_supported_color_modes = {ColorMode.BRIGHTNESS}
-    _attr_color_mode = ColorMode.BRIGHTNESS
+    """Representation of an RV-C dimmer light (dimmable or relay-only)."""
 
     def __init__(self, name: str, instance_id: str, topic_prefix: str) -> None:
         self._attr_name = name
@@ -116,9 +115,21 @@ class RVCLight(LightEntity):
         self._topic_prefix = topic_prefix
         self._attr_is_on = False
         self._attr_brightness = 255
+
+        # Determine if this is a dimmable light or relay-only
+        self._is_dimmable = instance_id in DIMMABLE_LIGHTS
+
+        # Set color mode based on dimmable capability
+        if self._is_dimmable:
+            self._attr_supported_color_modes = {ColorMode.BRIGHTNESS}
+            self._attr_color_mode = ColorMode.BRIGHTNESS
+        else:
+            self._attr_supported_color_modes = {ColorMode.ON_OFF}
+            self._attr_color_mode = ColorMode.ON_OFF
+
         _LOGGER.info(
-            "Initialized RVCLight: name='%s', instance=%s, topic_prefix='%s'",
-            name, instance_id, topic_prefix
+            "Initialized RVCLight: name='%s', instance=%s, dimmable=%s, topic_prefix='%s'",
+            name, instance_id, self._is_dimmable, topic_prefix
         )
 
     @property
@@ -175,30 +186,46 @@ class RVCLight(LightEntity):
         self.async_write_ha_state()
 
     async def async_turn_on(self, **kwargs: Any) -> None:
-        """Turn the light on (with optional brightness)."""
+        """Turn the light on (with optional brightness for dimmable lights)."""
 
-        brightness = kwargs.get(ATTR_BRIGHTNESS, self._attr_brightness or 255)
-        brightness = max(0, min(255, int(brightness)))
-        self._attr_brightness = brightness
         self._attr_is_on = True
 
-        # Convert to 0–100% for RV-C
-        pct = int(round(brightness / 2.55))
-        pct = max(0, min(100, pct))
+        if self._is_dimmable:
+            # Dimmable light: use command 0 with desired level
+            brightness = kwargs.get(ATTR_BRIGHTNESS, self._attr_brightness or 255)
+            brightness = max(0, min(255, int(brightness)))
+            self._attr_brightness = brightness
 
-        # Match actual MQTT payload format from example
-        payload = {
-            "command": CC_SET_BRIGHTNESS,  # 0: Set Brightness
-            "instance": int(self._instance),
-            "name": "DC_DIMMER_COMMAND_2",
-            "dgn": "1FEDB",
-            "brightness": pct,  # 0–100
-        }
+            # Convert HA brightness (0-255) to RV-C desired level (0-100)
+            desired_level = int(round(brightness / 2.55))
+            desired_level = max(0, min(100, desired_level))
 
-        _LOGGER.debug(
-            "Light %s turning ON: brightness=%d%% (HA=%d), publishing to %s: %s",
-            self._instance, pct, brightness, self._command_topic, payload
-        )
+            payload = {
+                "command": CC_SET_BRIGHTNESS,  # 0: Set Brightness
+                "instance": int(self._instance),
+                "name": "DC_DIMMER_COMMAND_2",
+                "dgn": "1FEDB",
+                "desired level": desired_level,  # 0–100
+            }
+
+            _LOGGER.debug(
+                "Dimmable light %s turning ON: desired_level=%d (HA=%d), publishing to %s: %s",
+                self._instance, desired_level, brightness, self._command_topic, payload
+            )
+        else:
+            # Non-dimmable (relay): use command 2 (on delay) with full brightness
+            payload = {
+                "command": CC_ON_DELAY,  # 2: On (Delay)
+                "instance": int(self._instance),
+                "name": "DC_DIMMER_COMMAND_2",
+                "dgn": "1FEDB",
+                "desired level": 100,  # Always full for relays
+            }
+
+            _LOGGER.debug(
+                "Relay light %s turning ON (non-dimmable), publishing to %s: %s",
+                self._instance, self._command_topic, payload
+            )
 
         await mqtt.async_publish(
             self.hass,
