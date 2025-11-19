@@ -118,22 +118,22 @@ def _extract_sensor_definitions(
 
     # INVERTER_DC_STATUS - DC voltage and current
     elif message_name.startswith("INVERTER_DC_STATUS"):
-        if "DC_voltage" in payload:
+        if "dc voltage" in payload:
             sensors.append({
                 "unique_key": f"{inst_str}_dc_voltage",
                 "unique_id": f"rvc_inverter_{inst_str}_dc_voltage",
                 "name": f"Inverter {inst_str} DC Voltage",
-                "value": payload["DC_voltage"],
+                "value": payload["dc voltage"],
                 "unit": UnitOfElectricPotential.VOLT,
                 "device_class": SensorDeviceClass.VOLTAGE,
                 "state_class": SensorStateClass.MEASUREMENT,
             })
-        if "DC_current" in payload:
+        if "dc amperage" in payload:  # Note: RV-C uses "amperage" not "current"
             sensors.append({
                 "unique_key": f"{inst_str}_dc_current",
                 "unique_id": f"rvc_inverter_{inst_str}_dc_current",
                 "name": f"Inverter {inst_str} DC Current",
-                "value": payload["DC_current"],
+                "value": payload["dc amperage"],
                 "unit": UnitOfElectricCurrent.AMPERE,
                 "device_class": SensorDeviceClass.CURRENT,
                 "state_class": SensorStateClass.MEASUREMENT,
@@ -154,22 +154,22 @@ def _extract_sensor_definitions(
 
     # INVERTER_TEMPERATURE_STATUS - temperatures
     elif message_name.startswith("INVERTER_TEMPERATURE_STATUS"):
-        if "FET_temperature" in payload:
+        if "fet temperature" in payload:
             sensors.append({
                 "unique_key": f"{inst_str}_fet_temp",
                 "unique_id": f"rvc_inverter_{inst_str}_fet_temp",
                 "name": f"Inverter {inst_str} FET Temperature",
-                "value": payload["FET_temperature"],
+                "value": payload["fet temperature"],
                 "unit": UnitOfTemperature.CELSIUS,
                 "device_class": SensorDeviceClass.TEMPERATURE,
                 "state_class": SensorStateClass.MEASUREMENT,
             })
-        if "transformer_temperature" in payload:
+        if "transformer temperature" in payload:
             sensors.append({
                 "unique_key": f"{inst_str}_transformer_temp",
                 "unique_id": f"rvc_inverter_{inst_str}_transformer_temp",
                 "name": f"Inverter {inst_str} Transformer Temperature",
-                "value": payload["transformer_temperature"],
+                "value": payload["transformer temperature"],
                 "unit": UnitOfTemperature.CELSIUS,
                 "device_class": SensorDeviceClass.TEMPERATURE,
                 "state_class": SensorStateClass.MEASUREMENT,
@@ -177,12 +177,12 @@ def _extract_sensor_definitions(
 
     # AC_LOAD_STATUS - load percentage
     elif message_name.startswith("AC_LOAD_STATUS"):
-        if "AC_load" in payload:
+        if "operating status" in payload:
             sensors.append({
                 "unique_key": f"{inst_str}_ac_load",
                 "unique_id": f"rvc_ac_load_{inst_str}",
                 "name": f"AC Load {inst_str}",
-                "value": payload["AC_load"],
+                "value": payload["operating status"],
                 "unit": PERCENTAGE,
                 "device_class": SensorDeviceClass.POWER_FACTOR,
                 "state_class": SensorStateClass.MEASUREMENT,
@@ -190,12 +190,12 @@ def _extract_sensor_definitions(
 
     # CHARGER_STATUS - charger state
     elif message_name.startswith("CHARGER_STATUS"):
-        if "charger_state" in payload:
+        if "operating state" in payload:
             sensors.append({
                 "unique_key": f"{inst_str}_charger_state",
                 "unique_id": f"rvc_charger_{inst_str}_state",
                 "name": f"Charger {inst_str} State",
-                "value": payload["charger_state"],
+                "value": payload["operating state"],
                 "unit": None,
                 "device_class": None,
                 "state_class": None,
