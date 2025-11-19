@@ -116,8 +116,8 @@ class RVCLight(LightEntity):
 
     @property
     def _command_topic(self) -> str:
-        # Example: rvc/command/light/36
-        return f"{self._topic_prefix}/command/light/{self._instance}"
+        # Match actual MQTT topic format: RVC/DC_DIMMER_COMMAND_2/36/set
+        return f"RVC/DC_DIMMER_COMMAND_2/{self._instance}/set"
 
     def handle_mqtt(self, payload: dict[str, Any]) -> None:
         """Update internal state from an MQTT payload.
@@ -170,9 +170,13 @@ class RVCLight(LightEntity):
         pct = int(round(brightness / 2.55))
         pct = max(0, min(100, pct))
 
+        # Match actual MQTT payload format from example
         payload = {
-            "cc": CC_SET_BRIGHTNESS,  # 00: Set Brightness
-            "brightness": pct,        # 0–100
+            "command": CC_SET_BRIGHTNESS,  # 0: Set Brightness
+            "instance": int(self._instance),
+            "name": "DC_DIMMER_COMMAND_2",
+            "dgn": "1FEDB",
+            "brightness": pct,  # 0–100
         }
 
         await mqtt.async_publish(
@@ -191,9 +195,12 @@ class RVCLight(LightEntity):
         self._attr_is_on = False
         self._attr_brightness = 0
 
+        # Match actual MQTT payload format from example
         payload = {
-            "cc": CC_OFF,  # 02: Off
-            "brightness": 0,
+            "command": CC_OFF,  # 3: Off (actual implementation, not spec)
+            "instance": int(self._instance),
+            "name": "DC_DIMMER_COMMAND_2",
+            "dgn": "1FEDB",
         }
 
         await mqtt.async_publish(
@@ -208,8 +215,12 @@ class RVCLight(LightEntity):
 
     async def async_ramp_up(self, duration: int = 5) -> None:
         """Ramp brightness up over specified duration."""
+        # Match actual MQTT payload format from example
         payload = {
-            "cc": CC_RAMP_UP,  # 03: Ramp Up
+            "command": CC_RAMP_UP,  # 4: Ramp Up
+            "instance": int(self._instance),
+            "name": "DC_DIMMER_COMMAND_2",
+            "dgn": "1FEDB",
             "duration": duration,
         }
 
@@ -223,8 +234,12 @@ class RVCLight(LightEntity):
 
     async def async_ramp_down(self, duration: int = 5) -> None:
         """Ramp brightness down over specified duration."""
+        # Match actual MQTT payload format from example
         payload = {
-            "cc": CC_RAMP_DOWN,  # 04: Ramp Down
+            "command": CC_RAMP_DOWN,  # 5: Ramp Down
+            "instance": int(self._instance),
+            "name": "DC_DIMMER_COMMAND_2",
+            "dgn": "1FEDB",
             "duration": duration,
         }
 

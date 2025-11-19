@@ -16,13 +16,15 @@ PLATFORMS: list[Platform] = [
     Platform.SENSOR,
 ]
 
-# Command codes for dimmer control (CC) — from RV-C spec
+# Command codes for dimmer control (CC) — from RV-C spec and actual MQTT usage
+# NOTE: Actual MQTT implementation uses command=3 for OFF (example shows this)
+# This differs from RV-C spec which has OFF=2, RAMP_UP=3
 CC_SET_BRIGHTNESS = 0
 CC_ON = 1
-CC_OFF = 2
-CC_RAMP_UP = 3
-CC_RAMP_DOWN = 4
-CC_STOP = 5
+CC_OFF = 3  # Actual implementation uses 3 for OFF (not 2 from spec)
+CC_RAMP_UP = 4  # May not be supported in actual implementation
+CC_RAMP_DOWN = 5  # May not be supported in actual implementation
+CC_STOP = 6
 CC_TOGGLE = 24
 
 # Human-friendly labels for dimmer/light instances (from actual RV device mapping)
