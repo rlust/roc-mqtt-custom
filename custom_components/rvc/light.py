@@ -124,8 +124,8 @@ class RVCLight(LightEntity):
             self._attr_supported_color_modes = {ColorMode.BRIGHTNESS}
             self._attr_color_mode = ColorMode.BRIGHTNESS
         else:
-            self._attr_supported_color_modes = {ColorMode.ON_OFF}
-            self._attr_color_mode = ColorMode.ON_OFF
+            self._attr_supported_color_modes = {ColorMode.ONOFF}
+            self._attr_color_mode = ColorMode.ONOFF
 
         _LOGGER.info(
             "Initialized RVCLight: name='%s', instance=%s, dimmable=%s, topic_prefix='%s'",
