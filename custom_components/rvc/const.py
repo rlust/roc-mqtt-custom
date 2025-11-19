@@ -16,16 +16,20 @@ PLATFORMS: list[Platform] = [
     Platform.SENSOR,
 ]
 
-# Command codes for dimmer control (CC) — from RV-C spec and actual MQTT usage
-# NOTE: Actual MQTT implementation uses command=3 for OFF (example shows this)
-# This differs from RV-C spec which has OFF=2, RAMP_UP=3
-CC_SET_BRIGHTNESS = 0
-CC_ON = 1
-CC_OFF = 3  # Actual implementation uses 3 for OFF (not 2 from spec)
-CC_RAMP_UP = 4  # May not be supported in actual implementation
-CC_RAMP_DOWN = 5  # May not be supported in actual implementation
-CC_STOP = 6
-CC_TOGGLE = 24
+# Command codes for dimmer control (CC) — from dimmer command usage doc
+# See: dimmer command useage.md for full command reference
+CC_SET_BRIGHTNESS = 0  # Set Level (with brightness 0-100)
+CC_ON = 1              # On (Duration)
+CC_ON_DELAY = 2        # On (Delay)
+CC_OFF = 3             # Off (Delay)
+CC_STOP = 4            # Stop
+CC_TOGGLE = 5          # Toggle
+CC_MEMORY_OFF = 6      # Memory Off
+CC_RAMP_BRIGHTNESS = 17  # Ramp Brightness
+CC_RAMP_TOGGLE = 18    # Ramp Toggle
+CC_RAMP_UP = 19        # Ramp Up
+CC_RAMP_DOWN = 20      # Ramp Down
+CC_RAMP_UP_DOWN = 21   # Ramp Down/Up
 
 # Human-friendly labels for dimmer/light instances (from actual RV device mapping)
 DIMMER_INSTANCE_LABELS: dict[str, str] = {

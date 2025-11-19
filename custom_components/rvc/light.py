@@ -128,7 +128,8 @@ class RVCLight(LightEntity):
     @property
     def _command_topic(self) -> str:
         # Use configured topic prefix (case-sensitive)
-        return f"{self._topic_prefix}/DC_DIMMER_COMMAND_2/{self._instance}/set"
+        # NOTE: No /set suffix - RV-C MQTT bridge expects direct topic
+        return f"{self._topic_prefix}/DC_DIMMER_COMMAND_2/{self._instance}"
 
     def handle_mqtt(self, payload: dict[str, Any]) -> None:
         """Update internal state from an MQTT payload.
