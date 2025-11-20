@@ -1,9 +1,7 @@
-"""Platform for RV-C lights."""
+"""Platform for RV-C lights using Node-RED MQTT format."""
 from __future__ import annotations
 
-import json
 import logging
-import time
 from typing import Any
 
 from homeassistant.components.light import (
@@ -15,7 +13,6 @@ from homeassistant.components import mqtt
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
-from homeassistant.helpers import entity_platform
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import (
@@ -23,12 +20,6 @@ from .const import (
     SIGNAL_DISCOVERY,
     DIMMER_INSTANCE_LABELS,
     DIMMABLE_LIGHTS,
-    CC_SET_BRIGHTNESS,
-    CC_ON_DELAY,
-    CC_OFF,
-    CC_RAMP_UP,
-    CC_RAMP_DOWN,
-    CC_STOP,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -77,35 +68,6 @@ async def async_setup_entry(
     unsub = async_dispatcher_connect(hass, SIGNAL_DISCOVERY, _discovery_callback)
     data["unsub_dispatchers"].append(unsub)
 
-    # Register custom services
-    platform = entity_platform.async_get_current_platform()
-
-    platform.async_register_entity_service(
-        "ramp_up",
-        {
-            "duration": {
-                "type": int,
-                "required": True,
-                "min": 1,
-                "max": 60,
-            }
-        },
-        "async_ramp_up",
-    )
-
-    platform.async_register_entity_service(
-        "ramp_down",
-        {
-            "duration": {
-                "type": int,
-                "required": True,
-                "min": 1,
-                "max": 60,
-            }
-        },
-        "async_ramp_down",
-    )
-
 
 class RVCLight(LightEntity):
     """Representation of an RV-C dimmer light (dimmable or relay-only)."""
@@ -129,41 +91,9 @@ class RVCLight(LightEntity):
             self._attr_color_mode = ColorMode.ONOFF
 
         _LOGGER.info(
-            "Initialized RVCLight: name='%s', instance=%s, dimmable=%s, topic_prefix='%s'",
-            name, instance_id, self._is_dimmable, topic_prefix
+            "Initialized RVCLight: name='%s', instance=%s, dimmable=%s",
+            name, instance_id, self._is_dimmable
         )
-
-    def _generate_can_data(
-        self,
-        group: int = 0xFF,
-        desired_level: int = 0,
-        command: int = 0,
-        duration: int = 0xFF,
-        interlock: int = 0x00
-    ) -> str:
-        """Generate 8-byte CAN frame data string for DC_DIMMER_COMMAND_2.
-
-        Based on RV-C specification DGN 1FEDB (DC_DIMMER_COMMAND_2):
-        - Byte 0: instance
-        - Byte 1: group (bitmap, 0xFF = all groups)
-        - Byte 2: desired level (0-100%)
-        - Byte 3: command code
-        - Byte 4: delay/duration (0xFF = immediate)
-        - Byte 5: interlock (0x00 = no interlock)
-        - Bytes 6-7: 0xFFFF (padding)
-        """
-        instance = int(self._instance)
-        # Format as uppercase hex string without 0x prefix
-        data = (
-            f"{instance:02X}"       # Byte 0: instance
-            f"{group:02X}"           # Byte 1: group
-            f"{desired_level:02X}"   # Byte 2: desired level (0-100)
-            f"{command:02X}"         # Byte 3: command code
-            f"{duration:02X}"        # Byte 4: delay/duration
-            f"{interlock:02X}"       # Byte 5: interlock
-            f"FFFF"                  # Bytes 6-7: padding
-        )
-        return data
 
     @property
     def unique_id(self) -> str:
@@ -171,9 +101,8 @@ class RVCLight(LightEntity):
 
     @property
     def _command_topic(self) -> str:
-        # Use configured topic prefix (case-sensitive)
-        # NOTE: No /set suffix - RV-C MQTT bridge expects direct topic
-        return f"{self._topic_prefix}/DC_DIMMER_COMMAND_2/{self._instance}"
+        # Node-RED format: single topic for all light commands
+        return "node-red/rvc/commands"
 
     def handle_mqtt(self, payload: dict[str, Any]) -> None:
         """Update internal state from an MQTT payload.
@@ -219,85 +148,34 @@ class RVCLight(LightEntity):
         self.async_write_ha_state()
 
     async def async_turn_on(self, **kwargs: Any) -> None:
-        """Turn the light on (with optional brightness for dimmable lights)."""
+        """Turn the light on using Node-RED format."""
 
         self._attr_is_on = True
 
-        if self._is_dimmable:
-            # Dimmable light: use command 0 with desired level
-            brightness = kwargs.get(ATTR_BRIGHTNESS, self._attr_brightness or 255)
-            brightness = max(0, min(255, int(brightness)))
-            self._attr_brightness = brightness
+        # Get brightness from kwargs or use current/default
+        brightness = kwargs.get(ATTR_BRIGHTNESS, self._attr_brightness or 255)
+        brightness = max(0, min(255, int(brightness)))
+        self._attr_brightness = brightness
 
-            # Convert HA brightness (0-255) to RV-C desired level (0-100)
-            desired_level = int(round(brightness / 2.55))
-            desired_level = max(0, min(100, desired_level))
+        # Convert HA brightness (0-255) to RV-C level (0-100)
+        desired_level = int(round(brightness / 2.55))
+        desired_level = max(1, min(100, desired_level))  # Ensure at least 1
 
-            # Generate CAN bus data bytes
-            can_data = self._generate_can_data(
-                group=0xFF,
-                desired_level=desired_level,
-                command=CC_SET_BRIGHTNESS,
-                duration=255,
-                interlock=0x00
-            )
+        # Node-RED format: "instance command brightness"
+        # Command 2 = Turn ON
+        instance = int(self._instance)
+        command = 2
+        payload = f"{instance} {command} {desired_level}"
 
-            # Match exact payload format from RVC_PROJECT_NOTES.md
-            payload = {
-                "command": CC_SET_BRIGHTNESS,  # 0: Set Brightness
-                "command definition": "set brightness",
-                "data": can_data,  # Raw CAN bus bytes
-                "delay/duration": 255,  # 255 = immediate/max
-                "desired level": desired_level,  # 0–100
-                "dgn": "1FEDB",
-                "group": "11111111",  # All groups
-                "instance": int(self._instance),
-                "interlock": "00",  # No interlock
-                "interlock definition": "no interlock active",
-                "name": "DC_DIMMER_COMMAND_2",
-                "timestamp": f"{time.time():.6f}",
-            }
-
-            _LOGGER.debug(
-                "Dimmable light %s turning ON: desired_level=%d (HA=%d), publishing to %s: %s",
-                self._instance, desired_level, brightness, self._command_topic, payload
-            )
-        else:
-            # Non-dimmable (relay): use command 2 (on delay) with full brightness
-            # Generate CAN bus data bytes
-            can_data = self._generate_can_data(
-                group=0xFF,
-                desired_level=100,
-                command=CC_ON_DELAY,
-                duration=255,
-                interlock=0x00
-            )
-
-            # Match exact payload format from RVC_PROJECT_NOTES.md
-            payload = {
-                "command": CC_ON_DELAY,  # 2: On (Delay)
-                "command definition": "on delay",
-                "data": can_data,  # Raw CAN bus bytes
-                "delay/duration": 255,  # 255 = immediate/max
-                "desired level": 100,  # Always full for relays
-                "dgn": "1FEDB",
-                "group": "11111111",  # All groups
-                "instance": int(self._instance),
-                "interlock": "00",  # No interlock
-                "interlock definition": "no interlock active",
-                "name": "DC_DIMMER_COMMAND_2",
-                "timestamp": f"{time.time():.6f}",
-            }
-
-            _LOGGER.debug(
-                "Relay light %s turning ON (non-dimmable), publishing to %s: %s",
-                self._instance, self._command_topic, payload
-            )
+        _LOGGER.debug(
+            "Light %s turning ON: brightness=%d%%, publishing to %s: '%s'",
+            self._instance, desired_level, self._command_topic, payload
+        )
 
         await mqtt.async_publish(
             self.hass,
             self._command_topic,
-            json.dumps(payload),
+            payload,
             qos=0,
             retain=False,
         )
@@ -305,117 +183,29 @@ class RVCLight(LightEntity):
         self.async_write_ha_state()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
-        """Turn the light off."""
+        """Turn the light off using Node-RED format."""
 
         self._attr_is_on = False
         self._attr_brightness = 0
 
-        # Generate CAN bus data bytes
-        can_data = self._generate_can_data(
-            group=0xFF,
-            desired_level=0,
-            command=CC_OFF,
-            duration=255,
-            interlock=0x00
-        )
-
-        # Match exact payload format from RVC_PROJECT_NOTES.md
-        payload = {
-            "command": CC_OFF,  # 3: Off
-            "command definition": "off",
-            "data": can_data,  # Raw CAN bus bytes
-            "delay/duration": 255,  # 255 = immediate/max
-            "desired level": 0,  # 0 for off
-            "dgn": "1FEDB",
-            "group": "11111111",  # All groups
-            "instance": int(self._instance),
-            "interlock": "00",  # No interlock
-            "interlock definition": "no interlock active",
-            "name": "DC_DIMMER_COMMAND_2",
-            "timestamp": f"{time.time():.6f}",
-        }
+        # Node-RED format: "instance command brightness"
+        # Command 3 = Turn OFF
+        instance = int(self._instance)
+        command = 3
+        brightness = 0
+        payload = f"{instance} {command} {brightness}"
 
         _LOGGER.debug(
-            "Light %s turning OFF: publishing to %s: %s",
+            "Light %s turning OFF: publishing to %s: '%s'",
             self._instance, self._command_topic, payload
         )
 
         await mqtt.async_publish(
             self.hass,
             self._command_topic,
-            json.dumps(payload),
+            payload,
             qos=0,
             retain=False,
         )
 
         self.async_write_ha_state()
-
-    async def async_ramp_up(self, duration: int = 5) -> None:
-        """Ramp brightness up over specified duration."""
-        # Generate CAN bus data bytes
-        can_data = self._generate_can_data(
-            group=0xFF,
-            desired_level=100,
-            command=CC_RAMP_UP,
-            duration=duration,
-            interlock=0x00
-        )
-
-        # Match exact payload format from RVC_PROJECT_NOTES.md
-        payload = {
-            "command": CC_RAMP_UP,  # 19: Ramp Up
-            "command definition": "ramp up",
-            "data": can_data,  # Raw CAN bus bytes
-            "delay/duration": duration,  # Use specified duration
-            "desired level": 100,  # Ramp to full
-            "dgn": "1FEDB",
-            "group": "11111111",  # All groups
-            "instance": int(self._instance),
-            "interlock": "00",  # No interlock
-            "interlock definition": "no interlock active",
-            "name": "DC_DIMMER_COMMAND_2",
-            "timestamp": f"{time.time():.6f}",
-        }
-
-        await mqtt.async_publish(
-            self.hass,
-            self._command_topic,
-            json.dumps(payload),
-            qos=0,
-            retain=False,
-        )
-
-    async def async_ramp_down(self, duration: int = 5) -> None:
-        """Ramp brightness down over specified duration."""
-        # Generate CAN bus data bytes
-        can_data = self._generate_can_data(
-            group=0xFF,
-            desired_level=0,
-            command=CC_RAMP_DOWN,
-            duration=duration,
-            interlock=0x00
-        )
-
-        # Match exact payload format from RVC_PROJECT_NOTES.md
-        payload = {
-            "command": CC_RAMP_DOWN,  # 20: Ramp Down
-            "command definition": "ramp down",
-            "data": can_data,  # Raw CAN bus bytes
-            "delay/duration": duration,  # Use specified duration
-            "desired level": 0,  # Ramp to off
-            "dgn": "1FEDB",
-            "group": "11111111",  # All groups
-            "instance": int(self._instance),
-            "interlock": "00",  # No interlock
-            "interlock definition": "no interlock active",
-            "name": "DC_DIMMER_COMMAND_2",
-            "timestamp": f"{time.time():.6f}",
-        }
-
-        await mqtt.async_publish(
-            self.hass,
-            self._command_topic,
-            json.dumps(payload),
-            qos=0,
-            retain=False,
-        )

@@ -16,23 +16,14 @@ PLATFORMS: list[Platform] = [
     Platform.SENSOR,
 ]
 
-# Command codes for dimmer control (CC) — from dimmer command usage doc
-# See: dimmer command useage.md for full command reference
-CC_SET_BRIGHTNESS = 0  # Set Level (with brightness 0-100)
-CC_ON = 1              # On (Duration)
-CC_ON_DELAY = 2        # On (Delay)
-CC_OFF = 3             # Off (Delay)
-CC_STOP = 4            # Stop
-CC_TOGGLE = 5          # Toggle
-CC_MEMORY_OFF = 6      # Memory Off
-CC_RAMP_BRIGHTNESS = 17  # Ramp Brightness
-CC_RAMP_TOGGLE = 18    # Ramp Toggle
-CC_RAMP_UP = 19        # Ramp Up
-CC_RAMP_DOWN = 20      # Ramp Down
-CC_RAMP_UP_DOWN = 21   # Ramp Down/Up
+# Node-RED MQTT Command Format
+# Topic: node-red/rvc/commands
+# Payload: "instance command brightness" (space-separated)
+# Commands: 2 = ON, 3 = OFF, 5 = TOGGLE
 
-# Dimmable light instances (can adjust brightness with command 0)
-# Non-dimmable instances (25-35) are relays that only support on/off with command 2
+# Dimmable light instances (support brightness control)
+# All lights use command 2 (ON) with brightness 0-100
+# Non-dimmable lights ignore brightness and use ON/OFF commands
 DIMMABLE_LIGHTS = {
     "25", "26", "27", "28", "29",  # Bedroom area
     "30", "31", "32", "33", "34",  # Bathroom areas
