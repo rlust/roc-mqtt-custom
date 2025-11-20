@@ -91,6 +91,13 @@ class RVCLight(LightEntity):
             self._attr_supported_color_modes = {ColorMode.ONOFF}
             self._attr_color_mode = ColorMode.ONOFF
 
+        # Store instance number and type as extra state attributes
+        self._attr_extra_state_attributes = {
+            "rvc_instance": instance_id,
+            "rvc_type": "dimmable" if self._is_dimmable else "relay",
+            "rvc_topic_prefix": topic_prefix,
+        }
+
         _LOGGER.info(
             "Initialized RVCLight: name='%s', instance=%s, dimmable=%s",
             name, instance_id, self._is_dimmable
