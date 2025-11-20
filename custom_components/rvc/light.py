@@ -133,6 +133,38 @@ class RVCLight(LightEntity):
             name, instance_id, self._is_dimmable, topic_prefix
         )
 
+    def _generate_can_data(
+        self,
+        group: int = 0xFF,
+        desired_level: int = 0,
+        command: int = 0,
+        duration: int = 0xFF,
+        interlock: int = 0x00
+    ) -> str:
+        """Generate 8-byte CAN frame data string for DC_DIMMER_COMMAND_2.
+
+        Based on RV-C specification DGN 1FEDB (DC_DIMMER_COMMAND_2):
+        - Byte 0: instance
+        - Byte 1: group (bitmap, 0xFF = all groups)
+        - Byte 2: desired level (0-100%)
+        - Byte 3: command code
+        - Byte 4: delay/duration (0xFF = immediate)
+        - Byte 5: interlock (0x00 = no interlock)
+        - Bytes 6-7: 0xFFFF (padding)
+        """
+        instance = int(self._instance)
+        # Format as uppercase hex string without 0x prefix
+        data = (
+            f"{instance:02X}"       # Byte 0: instance
+            f"{group:02X}"           # Byte 1: group
+            f"{desired_level:02X}"   # Byte 2: desired level (0-100)
+            f"{command:02X}"         # Byte 3: command code
+            f"{duration:02X}"        # Byte 4: delay/duration
+            f"{interlock:02X}"       # Byte 5: interlock
+            f"FFFF"                  # Bytes 6-7: padding
+        )
+        return data
+
     @property
     def unique_id(self) -> str:
         return f"rvc_light_{self._instance}"
@@ -201,10 +233,20 @@ class RVCLight(LightEntity):
             desired_level = int(round(brightness / 2.55))
             desired_level = max(0, min(100, desired_level))
 
+            # Generate CAN bus data bytes
+            can_data = self._generate_can_data(
+                group=0xFF,
+                desired_level=desired_level,
+                command=CC_SET_BRIGHTNESS,
+                duration=255,
+                interlock=0x00
+            )
+
             # Match exact payload format from RVC_PROJECT_NOTES.md
             payload = {
                 "command": CC_SET_BRIGHTNESS,  # 0: Set Brightness
                 "command definition": "set brightness",
+                "data": can_data,  # Raw CAN bus bytes
                 "delay/duration": 255,  # 255 = immediate/max
                 "desired level": desired_level,  # 0–100
                 "dgn": "1FEDB",
@@ -222,10 +264,20 @@ class RVCLight(LightEntity):
             )
         else:
             # Non-dimmable (relay): use command 2 (on delay) with full brightness
+            # Generate CAN bus data bytes
+            can_data = self._generate_can_data(
+                group=0xFF,
+                desired_level=100,
+                command=CC_ON_DELAY,
+                duration=255,
+                interlock=0x00
+            )
+
             # Match exact payload format from RVC_PROJECT_NOTES.md
             payload = {
                 "command": CC_ON_DELAY,  # 2: On (Delay)
                 "command definition": "on delay",
+                "data": can_data,  # Raw CAN bus bytes
                 "delay/duration": 255,  # 255 = immediate/max
                 "desired level": 100,  # Always full for relays
                 "dgn": "1FEDB",
@@ -258,10 +310,20 @@ class RVCLight(LightEntity):
         self._attr_is_on = False
         self._attr_brightness = 0
 
+        # Generate CAN bus data bytes
+        can_data = self._generate_can_data(
+            group=0xFF,
+            desired_level=0,
+            command=CC_OFF,
+            duration=255,
+            interlock=0x00
+        )
+
         # Match exact payload format from RVC_PROJECT_NOTES.md
         payload = {
             "command": CC_OFF,  # 3: Off
             "command definition": "off",
+            "data": can_data,  # Raw CAN bus bytes
             "delay/duration": 255,  # 255 = immediate/max
             "desired level": 0,  # 0 for off
             "dgn": "1FEDB",
@@ -290,10 +352,20 @@ class RVCLight(LightEntity):
 
     async def async_ramp_up(self, duration: int = 5) -> None:
         """Ramp brightness up over specified duration."""
+        # Generate CAN bus data bytes
+        can_data = self._generate_can_data(
+            group=0xFF,
+            desired_level=100,
+            command=CC_RAMP_UP,
+            duration=duration,
+            interlock=0x00
+        )
+
         # Match exact payload format from RVC_PROJECT_NOTES.md
         payload = {
             "command": CC_RAMP_UP,  # 19: Ramp Up
             "command definition": "ramp up",
+            "data": can_data,  # Raw CAN bus bytes
             "delay/duration": duration,  # Use specified duration
             "desired level": 100,  # Ramp to full
             "dgn": "1FEDB",
@@ -315,10 +387,20 @@ class RVCLight(LightEntity):
 
     async def async_ramp_down(self, duration: int = 5) -> None:
         """Ramp brightness down over specified duration."""
+        # Generate CAN bus data bytes
+        can_data = self._generate_can_data(
+            group=0xFF,
+            desired_level=0,
+            command=CC_RAMP_DOWN,
+            duration=duration,
+            interlock=0x00
+        )
+
         # Match exact payload format from RVC_PROJECT_NOTES.md
         payload = {
             "command": CC_RAMP_DOWN,  # 20: Ramp Down
             "command definition": "ramp down",
+            "data": can_data,  # Raw CAN bus bytes
             "delay/duration": duration,  # Use specified duration
             "desired level": 0,  # Ramp to off
             "dgn": "1FEDB",
