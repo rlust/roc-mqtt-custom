@@ -95,6 +95,9 @@ class RVCMQTTHandler:
             device_type = "sensor"
         elif raw_name.startswith("CHARGER_STATUS"):
             device_type = "sensor"
+        # Battery/DC Source Status - CRITICAL for battery monitoring!
+        elif raw_name.startswith("DC_SOURCE_STATUS"):
+            device_type = "sensor"
 
         if device_type is None:
             # Not something we map yet – safe to ignore

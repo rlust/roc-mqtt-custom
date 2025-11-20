@@ -12,6 +12,7 @@ from homeassistant.components.light import (
 from homeassistant.components import mqtt
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
@@ -96,6 +97,12 @@ class RVCLight(LightEntity):
             "rvc_instance": instance_id,
             "rvc_type": "dimmable" if self._is_dimmable else "relay",
             "rvc_topic_prefix": topic_prefix,
+            "last_command": None,
+            "load_status": None,
+            "enable_status": None,
+            "interlock_status": None,
+            "group_bits": None,
+            "last_mqtt_update": None,
         }
 
         _LOGGER.info(
@@ -106,6 +113,57 @@ class RVCLight(LightEntity):
     @property
     def unique_id(self) -> str:
         return f"rvc_light_{self._instance}"
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return device information to group entities."""
+        # Determine device grouping by instance range and type
+        instance_num = int(self._instance)
+
+        if self._is_dimmable:
+            # Dimmable lights (instances 25-35)
+            device_id = "dimmer_module"
+            device_name = "RVC Dimmer Module"
+            model = "DC Dimmer Controller"
+        else:
+            # Relay lights (instances 36+)
+            device_id = "relay_module"
+            device_name = "RVC Relay Module"
+            model = "DC Relay Controller"
+
+        return DeviceInfo(
+            identifiers={(DOMAIN, device_id)},
+            name=device_name,
+            manufacturer="RV-C",
+            model=model,
+            via_device=(DOMAIN, "main_controller"),
+        )
+
+    @property
+    def icon(self) -> str:
+        """Return icon based on light name."""
+        name = self._attr_name.lower()
+
+        if "accent" in name:
+            return "mdi:lightbulb-spot"
+        elif "ceiling" in name:
+            return "mdi:ceiling-light"
+        elif "security" in name or "motion" in name:
+            return "mdi:security"
+        elif "awning" in name:
+            return "mdi:awning-outline"
+        elif "porch" in name:
+            return "mdi:porch-light"
+        elif "vanity" in name or "lav" in name:
+            return "mdi:vanity-light"
+        elif "reading" in name:
+            return "mdi:book-open-page-variant"
+        elif "cargo" in name:
+            return "mdi:garage"
+        elif "slide" in name:
+            return "mdi:wall-sconce-flat"
+        else:
+            return "mdi:lightbulb"
 
     @property
     def _command_topic(self) -> str:
@@ -150,6 +208,36 @@ class RVCLight(LightEntity):
                 pass
 
         # DO NOT override the name from payload - we use our mapped names from DIMMER_INSTANCE_LABELS
+
+        # Capture diagnostic attributes from RV-C payload
+        attrs = self._attr_extra_state_attributes
+
+        # Last command executed
+        if "last command definition" in payload:
+            attrs["last_command"] = payload["last command definition"]
+        elif "last command" in payload:
+            # Fallback to numeric code if definition not available
+            attrs["last_command"] = f"Code {payload['last command']}"
+
+        # Load status (electrical load state)
+        if "load status definition" in payload:
+            attrs["load_status"] = payload["load status definition"]
+
+        # Enable status (if light is enabled/disabled)
+        if "enable status definition" in payload:
+            attrs["enable_status"] = payload["enable status definition"]
+
+        # Interlock status (safety interlock)
+        if "interlock status definition" in payload:
+            attrs["interlock_status"] = payload["interlock status definition"]
+
+        # Group membership (for scene control)
+        if "group" in payload:
+            attrs["group_bits"] = payload["group"]
+
+        # Timestamp for diagnostics and availability tracking
+        if "timestamp" in payload:
+            attrs["last_mqtt_update"] = payload["timestamp"]
 
         self.async_write_ha_state()
 

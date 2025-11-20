@@ -13,6 +13,7 @@ from homeassistant.const import UnitOfTemperature
 from homeassistant.components import mqtt
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
@@ -62,6 +63,7 @@ class RVCClimate(ClimateEntity):
 
     def __init__(self, name: str, instance_id: str, topic_prefix: str) -> None:
         self._attr_name = name
+        self._attr_has_entity_name = False  # Use our name as-is
         self._instance = instance_id
         self._topic_prefix = topic_prefix
         self._attr_hvac_mode = HVACMode.AUTO
@@ -69,9 +71,44 @@ class RVCClimate(ClimateEntity):
         self._attr_current_temperature = None
         self._attr_temperature_unit = UnitOfTemperature.FAHRENHEIT  # RV-C uses Fahrenheit
 
+        # Enhanced diagnostic attributes
+        self._attr_extra_state_attributes = {
+            "rvc_instance": instance_id,
+            "rvc_topic_prefix": topic_prefix,
+            "ac_output_level": None,
+            "fan_speed_actual": None,
+            "fan_mode": None,
+            "schedule_mode": None,
+            "dead_band": None,
+            "last_mqtt_update": None,
+        }
+
     @property
     def unique_id(self) -> str:
         return f"rvc_climate_{self._instance}"
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return device information to group climate entities."""
+        return DeviceInfo(
+            identifiers={(DOMAIN, f"climate_zone_{self._instance}")},
+            name=f"Climate Zone {self._instance}",
+            manufacturer="RV-C",
+            model="HVAC Controller",
+            via_device=(DOMAIN, "main_controller"),
+        )
+
+    @property
+    def icon(self) -> str:
+        """Return icon for climate entity."""
+        if self._attr_hvac_mode == HVACMode.COOL:
+            return "mdi:snowflake"
+        elif self._attr_hvac_mode == HVACMode.HEAT:
+            return "mdi:fire"
+        elif self._attr_hvac_mode == HVACMode.OFF:
+            return "mdi:hvac-off"
+        else:
+            return "mdi:thermostat"
 
     @property
     def _command_topic(self) -> str:
@@ -99,6 +136,37 @@ class RVCClimate(ClimateEntity):
                 if m.value == mode:
                     self._attr_hvac_mode = m
                     break
+
+        # Capture diagnostic attributes from RV-C payload
+        attrs = self._attr_extra_state_attributes
+
+        # AC output level (from AIR_CONDITIONER_STATUS)
+        if "air conditioning output level" in payload:
+            attrs["ac_output_level"] = payload["air conditioning output level"]
+
+        # Fan speed (actual from AIR_CONDITIONER_STATUS or THERMOSTAT)
+        if "fan speed" in payload:
+            attrs["fan_speed_actual"] = payload["fan speed"]
+
+        # Fan mode (from THERMOSTAT_STATUS_1)
+        if "fan mode definition" in payload:
+            attrs["fan_mode"] = payload["fan mode definition"]
+        elif "fan mode" in payload:
+            attrs["fan_mode"] = f"Mode {payload['fan mode']}"
+
+        # Schedule mode (from THERMOSTAT_STATUS_1)
+        if "schedule mode definition" in payload:
+            attrs["schedule_mode"] = payload["schedule mode definition"]
+        elif "schedule mode" in payload:
+            attrs["schedule_mode"] = f"Mode {payload['schedule mode']}"
+
+        # Dead band (temperature dead band from AIR_CONDITIONER_STATUS)
+        if "dead band" in payload:
+            attrs["dead_band"] = payload["dead band"]
+
+        # Timestamp for diagnostics
+        if "timestamp" in payload:
+            attrs["last_mqtt_update"] = payload["timestamp"]
 
         self.async_write_ha_state()
 

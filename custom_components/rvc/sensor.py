@@ -10,6 +10,7 @@ from homeassistant.components.sensor import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.const import (
@@ -201,6 +202,87 @@ def _extract_sensor_definitions(
                 "state_class": None,
             })
 
+    # DC_SOURCE_STATUS_1 - Battery voltage and current (CRITICAL NEW SENSORS)
+    elif message_name.startswith("DC_SOURCE_STATUS_1"):
+        if "dc voltage" in payload:
+            sensors.append({
+                "unique_key": f"{inst_str}_battery_voltage",
+                "unique_id": f"rvc_battery_{inst_str}_voltage",
+                "name": f"Battery {inst_str} Voltage",
+                "value": payload["dc voltage"],
+                "unit": UnitOfElectricPotential.VOLT,
+                "device_class": SensorDeviceClass.VOLTAGE,
+                "state_class": SensorStateClass.MEASUREMENT,
+            })
+        if "dc current" in payload:
+            sensors.append({
+                "unique_key": f"{inst_str}_battery_current",
+                "unique_id": f"rvc_battery_{inst_str}_current",
+                "name": f"Battery {inst_str} Current",
+                "value": payload["dc current"],
+                "unit": UnitOfElectricCurrent.AMPERE,
+                "device_class": SensorDeviceClass.CURRENT,
+                "state_class": SensorStateClass.MEASUREMENT,
+            })
+
+    # DC_SOURCE_STATUS_2 - State of charge, temperature, time remaining (CRITICAL!)
+    elif message_name.startswith("DC_SOURCE_STATUS_2"):
+        if "state of charge" in payload:
+            sensors.append({
+                "unique_key": f"{inst_str}_battery_soc",
+                "unique_id": f"rvc_battery_{inst_str}_soc",
+                "name": f"Battery {inst_str} State of Charge",
+                "value": payload["state of charge"],
+                "unit": PERCENTAGE,
+                "device_class": SensorDeviceClass.BATTERY,
+                "state_class": SensorStateClass.MEASUREMENT,
+            })
+        if "source temperature" in payload:
+            sensors.append({
+                "unique_key": f"{inst_str}_battery_temp",
+                "unique_id": f"rvc_battery_{inst_str}_temperature",
+                "name": f"Battery {inst_str} Temperature",
+                "value": payload["source temperature"],
+                "unit": UnitOfTemperature.CELSIUS,
+                "device_class": SensorDeviceClass.TEMPERATURE,
+                "state_class": SensorStateClass.MEASUREMENT,
+            })
+        if "time remaining" in payload:
+            # Time remaining in minutes
+            sensors.append({
+                "unique_key": f"{inst_str}_battery_time_remaining",
+                "unique_id": f"rvc_battery_{inst_str}_time_remaining",
+                "name": f"Battery {inst_str} Time Remaining",
+                "value": payload["time remaining"],
+                "unit": "min",
+                "device_class": SensorDeviceClass.DURATION,
+                "state_class": SensorStateClass.MEASUREMENT,
+            })
+
+    # DC_SOURCE_STATUS_3 - State of health, capacity remaining
+    elif message_name.startswith("DC_SOURCE_STATUS_3"):
+        if "state of health" in payload:
+            sensors.append({
+                "unique_key": f"{inst_str}_battery_soh",
+                "unique_id": f"rvc_battery_{inst_str}_soh",
+                "name": f"Battery {inst_str} State of Health",
+                "value": payload["state of health"],
+                "unit": PERCENTAGE,
+                "device_class": None,
+                "state_class": SensorStateClass.MEASUREMENT,
+            })
+        if "capacity remaining" in payload:
+            # Capacity in Amp-hours
+            sensors.append({
+                "unique_key": f"{inst_str}_battery_capacity_remaining",
+                "unique_id": f"rvc_battery_{inst_str}_capacity",
+                "name": f"Battery {inst_str} Capacity Remaining",
+                "value": payload["capacity remaining"],
+                "unit": "Ah",
+                "device_class": None,
+                "state_class": SensorStateClass.MEASUREMENT,
+            })
+
     # Fallback for generic sensor payloads (with "value" field)
     if not sensors and "value" in payload:
         sensors.append({
@@ -230,16 +312,62 @@ class RVCSensor(SensorEntity):
     ) -> None:
         """Initialize the sensor."""
         self._attr_name = name
+        self._attr_has_entity_name = False  # Use our name as-is
         self._attr_unique_id = unique_id
         self._attr_native_value = initial_value
         self._attr_native_unit_of_measurement = unit
         self._attr_device_class = device_class
         self._attr_state_class = state_class
 
+        # Extract instance and sensor type from unique_id for device grouping
+        # unique_id format examples: "rvc_battery_1_voltage", "rvc_inverter_0_dc_voltage"
+        self._determine_device_info()
+
+    def _determine_device_info(self) -> None:
+        """Determine device info based on unique_id pattern."""
+        uid = self._attr_unique_id
+
+        if "battery" in uid or "dc_source" in uid:
+            self._device_id = "power_system"
+            self._device_name = "RVC Power System"
+            self._device_model = "Battery & Power Management"
+        elif "inverter" in uid:
+            self._device_id = "power_system"
+            self._device_name = "RVC Power System"
+            self._device_model = "Inverter & Power Management"
+        elif "tank" in uid or uid.startswith("rvc_sensor_"):
+            # Tank sensors use old format "rvc_sensor_{instance}"
+            self._device_id = "tank_system"
+            self._device_name = "RVC Tank System"
+            self._device_model = "Tank Monitoring"
+        elif "thermostat" in uid or "ambient" in uid:
+            self._device_id = "climate_system"
+            self._device_name = "RVC Climate System"
+            self._device_model = "Temperature Monitoring"
+        elif "charger" in uid:
+            self._device_id = "power_system"
+            self._device_name = "RVC Power System"
+            self._device_model = "Charger Management"
+        else:
+            self._device_id = "sensors"
+            self._device_name = "RVC Sensors"
+            self._device_model = "Monitoring System"
+
     @property
     def unique_id(self) -> str:
         """Return unique ID."""
         return self._attr_unique_id
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return device information to group sensors."""
+        return DeviceInfo(
+            identifiers={(DOMAIN, self._device_id)},
+            name=self._device_name,
+            manufacturer="RV-C",
+            model=self._device_model,
+            via_device=(DOMAIN, "main_controller"),
+        )
 
     def update_value(self, value: Any) -> None:
         """Update the sensor value and write state."""
