@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any
 
 from homeassistant.components.light import (
@@ -81,6 +82,10 @@ class RVCLight(LightEntity):
         self._attr_is_on = False
         self._attr_brightness = 255
 
+        # Availability tracking - entity unavailable until first MQTT update
+        self._attr_available = False
+        self._last_update_time: float | None = None
+
         # Determine if this is a dimmable light or relay-only
         self._is_dimmable = instance_id in DIMMABLE_LIGHTS
 
@@ -113,6 +118,15 @@ class RVCLight(LightEntity):
     @property
     def unique_id(self) -> str:
         return f"rvc_light_{self._instance}"
+
+    @property
+    def available(self) -> bool:
+        """Return True if entity is available.
+
+        Entity is unavailable until first MQTT status message is received.
+        This prevents showing false 'OFF' state before actual state is known.
+        """
+        return self._attr_available
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -181,6 +195,17 @@ class RVCLight(LightEntity):
             "Light %s received MQTT payload: %s",
             self._instance, payload
         )
+
+        # Mark entity as available on first MQTT message
+        if not self._attr_available:
+            _LOGGER.info(
+                "Light %s now available - received first MQTT status update",
+                self._instance
+            )
+            self._attr_available = True
+
+        # Track last update time for availability monitoring
+        self._last_update_time = time.time()
 
         # Raw RV-C dimmer payload: "operating status (brightness)" 0–100
         if "operating status (brightness)" in payload:
