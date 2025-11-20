@@ -74,6 +74,7 @@ class RVCLight(LightEntity):
 
     def __init__(self, name: str, instance_id: str, topic_prefix: str) -> None:
         self._attr_name = name
+        self._attr_has_entity_name = False  # Use our name as-is, not combined with device name
         self._instance = instance_id
         self._topic_prefix = topic_prefix
         self._attr_is_on = False
