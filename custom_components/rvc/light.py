@@ -149,9 +149,7 @@ class RVCLight(LightEntity):
             except (TypeError, ValueError):
                 pass
 
-        # Optional human-readable name override
-        if "name" in payload:
-            self._attr_name = str(payload["name"])
+        # DO NOT override the name from payload - we use our mapped names from DIMMER_INSTANCE_LABELS
 
         self.async_write_ha_state()
 
