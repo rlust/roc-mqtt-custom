@@ -21,6 +21,7 @@ from .const import (
     DOMAIN,
     SIGNAL_DISCOVERY,
     DIMMER_INSTANCE_LABELS,
+    SWITCH_INSTANCE_LABELS,
     DIMMABLE_LIGHTS,
 )
 
@@ -32,11 +33,39 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up RV-C lights dynamically from discovery events."""
+    """Set up RV-C lights - pre-create all mapped entities on startup."""
 
     data = hass.data[DOMAIN][entry.entry_id]
     entities: dict[str, RVCLight] = {}
+    topic_prefix = entry.data.get("topic_prefix", "rvc")
 
+    # Pre-create all mapped light entities from const.py mappings
+    # They will start as "unavailable" and become available when MQTT messages arrive
+    all_light_instances = {**DIMMER_INSTANCE_LABELS, **SWITCH_INSTANCE_LABELS}
+
+    _LOGGER.info(
+        "Pre-creating %d light entities from mappings (dimmers: %d, switches: %d)",
+        len(all_light_instances),
+        len(DIMMER_INSTANCE_LABELS),
+        len(SWITCH_INSTANCE_LABELS),
+    )
+
+    initial_entities = []
+    for inst_str, name in all_light_instances.items():
+        entity = RVCLight(
+            name=name,
+            instance_id=inst_str,
+            topic_prefix=topic_prefix,
+        )
+        entities[inst_str] = entity
+        initial_entities.append(entity)
+        _LOGGER.debug("Pre-created light entity: instance=%s, name='%s'", inst_str, name)
+
+    # Add all pre-created entities at once
+    async_add_entities(initial_entities)
+    _LOGGER.info("Successfully added %d light entities", len(initial_entities))
+
+    # Discovery callback handles MQTT updates and any unmapped instances
     async def _discovery_callback(discovery: dict[str, Any]) -> None:
         if discovery["type"] != "light":
             return
@@ -45,26 +74,23 @@ async def async_setup_entry(
         payload = discovery["payload"]
         inst_str = str(instance)
 
-        # Prefer your dimmer mapping; fall back to payload name; then generic
-        label = DIMMER_INSTANCE_LABELS.get(inst_str)
-        name = label or payload.get("name") or f"RVC Light {inst_str}"
-
         entity = entities.get(inst_str)
         if entity is None:
-            _LOGGER.debug(
-                "Creating new light entity: instance=%s, name='%s', label='%s'",
-                inst_str, name, label
+            # Unmapped instance - create it dynamically
+            name = payload.get("name") or f"RVC Light {inst_str}"
+            _LOGGER.info(
+                "Discovered unmapped light instance %s (name='%s') - creating dynamically",
+                inst_str, name
             )
             entity = RVCLight(
                 name=name,
                 instance_id=inst_str,
-                topic_prefix=entry.data.get("topic_prefix", "rvc"),
+                topic_prefix=topic_prefix,
             )
             entities[inst_str] = entity
             async_add_entities([entity])
-        else:
-            _LOGGER.debug("Updating existing light entity: instance=%s", inst_str)
 
+        # Update entity state from MQTT payload
         entity.handle_mqtt(payload)
 
     unsub = async_dispatcher_connect(hass, SIGNAL_DISCOVERY, _discovery_callback)
