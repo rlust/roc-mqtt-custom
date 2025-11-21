@@ -108,8 +108,10 @@ class RVCLight(LightEntity):
         self._attr_is_on = False
         self._attr_brightness = 255
 
-        # Availability tracking - entity unavailable until first MQTT update
-        self._attr_available = False
+        # Availability and state tracking
+        # Entities start as "available" but with "assumed_state" until MQTT confirms
+        self._attr_available = True  # Allow immediate control
+        self._attr_assumed_state = True  # Show dashed circle until MQTT arrives
         self._last_update_time: float | None = None
 
         # Determine if this is a dimmable light or relay-only
@@ -149,8 +151,8 @@ class RVCLight(LightEntity):
     def available(self) -> bool:
         """Return True if entity is available.
 
-        Entity is unavailable until first MQTT status message is received.
-        This prevents showing false 'OFF' state before actual state is known.
+        Entities are always available for control, but use assumed_state
+        to indicate uncertainty until first MQTT status message arrives.
         """
         return self._attr_available
 
@@ -222,13 +224,14 @@ class RVCLight(LightEntity):
             self._instance, payload
         )
 
-        # Mark entity as available on first MQTT message
-        if not self._attr_available:
+        # Disable assumed_state on first MQTT message
+        # Entity transitions from "assumed" (dashed circle) to "known" (normal icon)
+        if self._attr_assumed_state:
             _LOGGER.info(
-                "Light %s now available - received first MQTT status update",
+                "Light %s received first MQTT status - state now confirmed (no longer assumed)",
                 self._instance
             )
-            self._attr_available = True
+            self._attr_assumed_state = False
 
         # Track last update time for availability monitoring
         self._last_update_time = time.time()
