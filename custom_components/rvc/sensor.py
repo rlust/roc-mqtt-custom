@@ -176,17 +176,47 @@ def _extract_sensor_definitions(
                 "state_class": SensorStateClass.MEASUREMENT,
             })
 
-    # AC_LOAD_STATUS - load percentage
+    # AC_LOAD_STATUS - load percentage, current, and operating mode
     elif message_name.startswith("AC_LOAD_STATUS"):
         if "operating status" in payload:
             sensors.append({
                 "unique_key": f"{inst_str}_ac_load",
                 "unique_id": f"rvc_ac_load_{inst_str}",
-                "name": f"AC Load {inst_str}",
+                "name": f"AC Load {inst_str} Status",
                 "value": payload["operating status"],
                 "unit": PERCENTAGE,
                 "device_class": SensorDeviceClass.POWER_FACTOR,
                 "state_class": SensorStateClass.MEASUREMENT,
+            })
+        if "demanded current" in payload:
+            sensors.append({
+                "unique_key": f"{inst_str}_ac_load_current",
+                "unique_id": f"rvc_ac_load_{inst_str}_current",
+                "name": f"AC Load {inst_str} Demanded Current",
+                "value": payload["demanded current"],
+                "unit": UnitOfElectricCurrent.AMPERE,
+                "device_class": SensorDeviceClass.CURRENT,
+                "state_class": SensorStateClass.MEASUREMENT,
+            })
+        if "operating mode definition" in payload:
+            sensors.append({
+                "unique_key": f"{inst_str}_ac_load_mode",
+                "unique_id": f"rvc_ac_load_{inst_str}_mode",
+                "name": f"AC Load {inst_str} Mode",
+                "value": payload["operating mode definition"],
+                "unit": None,
+                "device_class": None,
+                "state_class": None,
+            })
+        if "priority definition" in payload:
+            sensors.append({
+                "unique_key": f"{inst_str}_ac_load_priority",
+                "unique_id": f"rvc_ac_load_{inst_str}_priority",
+                "name": f"AC Load {inst_str} Priority",
+                "value": payload["priority definition"],
+                "unit": None,
+                "device_class": None,
+                "state_class": None,
             })
 
     # CHARGER_STATUS - charger state
@@ -441,6 +471,10 @@ class RVCSensor(SensorEntity):
             self._device_id = "circulation_pump"
             self._device_name = "RVC Circulation Pump"
             self._device_model = "Circulation Pump System"
+        elif "ac_load" in uid:
+            self._device_id = "ac_load_system"
+            self._device_name = "RVC AC Load Manager"
+            self._device_model = "AC Load Control System"
         elif "battery" in uid or "dc_source" in uid:
             self._device_id = "power_system"
             self._device_name = "RVC Power System"
