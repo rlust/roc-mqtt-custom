@@ -346,6 +346,49 @@ def _extract_sensor_definitions(
                 "state_class": None,
             })
 
+    # CIRCULATION_PUMP_STATUS - pump operating state and diagnostics
+    elif message_name.startswith("CIRCULATION_PUMP_STATUS"):
+        if "output status definition" in payload:
+            sensors.append({
+                "unique_key": f"{inst_str}_circ_pump_status",
+                "unique_id": f"rvc_circpump_{inst_str}_status",
+                "name": f"Circulation Pump {inst_str} Status",
+                "value": payload["output status definition"],
+                "unit": None,
+                "device_class": None,
+                "state_class": None,
+            })
+        if "pump overcurrent status definition" in payload:
+            sensors.append({
+                "unique_key": f"{inst_str}_circ_pump_overcurrent",
+                "unique_id": f"rvc_circpump_{inst_str}_overcurrent",
+                "name": f"Circulation Pump {inst_str} Overcurrent",
+                "value": payload["pump overcurrent status definition"],
+                "unit": None,
+                "device_class": None,
+                "state_class": None,
+            })
+        if "pump temperature status definition" in payload:
+            sensors.append({
+                "unique_key": f"{inst_str}_circ_pump_temp",
+                "unique_id": f"rvc_circpump_{inst_str}_temperature",
+                "name": f"Circulation Pump {inst_str} Temperature",
+                "value": payload["pump temperature status definition"],
+                "unit": None,
+                "device_class": None,
+                "state_class": None,
+            })
+        if "pump undercurrent status definition" in payload:
+            sensors.append({
+                "unique_key": f"{inst_str}_circ_pump_undercurrent",
+                "unique_id": f"rvc_circpump_{inst_str}_undercurrent",
+                "name": f"Circulation Pump {inst_str} Undercurrent",
+                "value": payload["pump undercurrent status definition"],
+                "unit": None,
+                "device_class": None,
+                "state_class": None,
+            })
+
     # Fallback for generic sensor payloads (with "value" field)
     if not sensors and "value" in payload:
         sensors.append({
@@ -394,6 +437,10 @@ class RVCSensor(SensorEntity):
             self._device_id = "water_heater"
             self._device_name = "RVC Water Heater"
             self._device_model = "Water Heater System"
+        elif "circpump" in uid:
+            self._device_id = "circulation_pump"
+            self._device_name = "RVC Circulation Pump"
+            self._device_model = "Circulation Pump System"
         elif "battery" in uid or "dc_source" in uid:
             self._device_id = "power_system"
             self._device_name = "RVC Power System"

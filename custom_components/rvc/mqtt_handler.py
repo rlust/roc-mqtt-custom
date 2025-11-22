@@ -103,6 +103,10 @@ class RVCMQTTHandler:
         elif raw_name.startswith("WATERHEATER_STATUS"):
             device_type = "sensor"
 
+        # Circulation Pump Status - pump operating state and diagnostics
+        elif raw_name.startswith("CIRCULATION_PUMP_STATUS"):
+            device_type = "sensor"
+
         if device_type is None:
             # Not something we map yet – safe to ignore
             _LOGGER.debug(
