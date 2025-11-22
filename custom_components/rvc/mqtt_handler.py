@@ -99,6 +99,10 @@ class RVCMQTTHandler:
         elif raw_name.startswith("DC_SOURCE_STATUS"):
             device_type = "sensor"
 
+        # Water Heater Status - temperature and operating state monitoring
+        elif raw_name.startswith("WATERHEATER_STATUS"):
+            device_type = "sensor"
+
         if device_type is None:
             # Not something we map yet – safe to ignore
             _LOGGER.debug(

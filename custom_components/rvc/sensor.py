@@ -283,6 +283,69 @@ def _extract_sensor_definitions(
                 "state_class": SensorStateClass.MEASUREMENT,
             })
 
+    # WATERHEATER_STATUS - water temperature and operating status
+    elif message_name.startswith("WATERHEATER_STATUS"):
+        if "water temperature F" in payload:
+            sensors.append({
+                "unique_key": f"{inst_str}_water_heater_temp",
+                "unique_id": f"rvc_waterheater_{inst_str}_temperature",
+                "name": f"Water Heater {inst_str} Temperature",
+                "value": payload["water temperature F"],
+                "unit": UnitOfTemperature.FAHRENHEIT,
+                "device_class": SensorDeviceClass.TEMPERATURE,
+                "state_class": SensorStateClass.MEASUREMENT,
+            })
+        if "operating modes definition" in payload:
+            sensors.append({
+                "unique_key": f"{inst_str}_water_heater_mode",
+                "unique_id": f"rvc_waterheater_{inst_str}_mode",
+                "name": f"Water Heater {inst_str} Mode",
+                "value": payload["operating modes definition"],
+                "unit": None,
+                "device_class": None,
+                "state_class": None,
+            })
+        if "burner status definition" in payload:
+            sensors.append({
+                "unique_key": f"{inst_str}_water_heater_burner",
+                "unique_id": f"rvc_waterheater_{inst_str}_burner",
+                "name": f"Water Heater {inst_str} Burner",
+                "value": payload["burner status definition"],
+                "unit": None,
+                "device_class": None,
+                "state_class": None,
+            })
+        if "thermostat status definition" in payload:
+            sensors.append({
+                "unique_key": f"{inst_str}_water_heater_thermostat",
+                "unique_id": f"rvc_waterheater_{inst_str}_thermostat",
+                "name": f"Water Heater {inst_str} Thermostat",
+                "value": payload["thermostat status definition"],
+                "unit": None,
+                "device_class": None,
+                "state_class": None,
+            })
+        if "dc power failure status definition" in payload:
+            sensors.append({
+                "unique_key": f"{inst_str}_water_heater_dc_power",
+                "unique_id": f"rvc_waterheater_{inst_str}_dc_power",
+                "name": f"Water Heater {inst_str} DC Power",
+                "value": payload["dc power failure status definition"],
+                "unit": None,
+                "device_class": None,
+                "state_class": None,
+            })
+        if "failure to ignite status definition" in payload:
+            sensors.append({
+                "unique_key": f"{inst_str}_water_heater_ignite",
+                "unique_id": f"rvc_waterheater_{inst_str}_ignite_status",
+                "name": f"Water Heater {inst_str} Ignite Status",
+                "value": payload["failure to ignite status definition"],
+                "unit": None,
+                "device_class": None,
+                "state_class": None,
+            })
+
     # Fallback for generic sensor payloads (with "value" field)
     if not sensors and "value" in payload:
         sensors.append({
@@ -327,7 +390,11 @@ class RVCSensor(SensorEntity):
         """Determine device info based on unique_id pattern."""
         uid = self._attr_unique_id
 
-        if "battery" in uid or "dc_source" in uid:
+        if "waterheater" in uid:
+            self._device_id = "water_heater"
+            self._device_name = "RVC Water Heater"
+            self._device_model = "Water Heater System"
+        elif "battery" in uid or "dc_source" in uid:
             self._device_id = "power_system"
             self._device_name = "RVC Power System"
             self._device_model = "Battery & Power Management"
