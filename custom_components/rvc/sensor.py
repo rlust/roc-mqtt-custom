@@ -79,16 +79,30 @@ def _extract_sensor_definitions(
     sensors = []
     inst_str = str(instance)
 
-    # TANK_STATUS - relative level, instance definition
+    # TANK_STATUS - calculate level as (relative level / resolution) * 100
     if message_name.startswith("TANK_STATUS"):
         if "relative level" in payload:
-            tank_type = payload.get("instance definition", "Tank").replace(" tank", "")
+            tank_type = payload.get("instance definition", "Tank").replace(" tank", "").title()
+
+            # Calculate actual percentage: relative level / resolution
+            relative_level = payload["relative level"]
+            resolution = payload.get("resolution", 100)  # Default to 100 if missing
+
+            # Avoid division by zero
+            if resolution and resolution > 0:
+                tank_percentage = round((relative_level / resolution) * 100, 1)
+            else:
+                tank_percentage = relative_level  # Fallback to raw value
+
+            # Clamp to 0-100 range
+            tank_percentage = max(0, min(100, tank_percentage))
+
             # BACKWARD COMPATIBILITY: Use old unique_id format to avoid orphaning existing entities
             sensors.append({
                 "unique_key": f"{inst_str}_tank_level",
                 "unique_id": f"rvc_sensor_{inst_str}",  # Keep old format for compatibility
                 "name": f"{tank_type} Tank Level",
-                "value": payload["relative level"],
+                "value": tank_percentage,
                 "unit": PERCENTAGE,
                 "device_class": None,
                 "state_class": SensorStateClass.MEASUREMENT,
