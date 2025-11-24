@@ -14,6 +14,7 @@ PLATFORMS: list[Platform] = [
     Platform.LIGHT,
     Platform.CLIMATE,
     Platform.SENSOR,
+    Platform.LOCK,
 ]
 
 # Node-RED MQTT Command Format
@@ -77,8 +78,12 @@ SWITCH_INSTANCE_LABELS: dict[str, str] = {
     "14": "Entry Door",
     "15": "Gen Stop",
     "16": "Water Pump",
-    "17": "Entry Door Unlock",
     "18": "Gen Start",
+}
+
+# Lock instance labels (door locks)
+LOCK_INSTANCE_LABELS: dict[str, str] = {
+    "17": "Entry Door Unlock",
 }
 
 # Cover/slide/awning instance labels
