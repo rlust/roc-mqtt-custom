@@ -32,6 +32,51 @@ DIMMABLE_LIGHTS = {
     "35",                           # Entry
 }
 
+# Light area groupings for device organization
+# Lights in these sets will be grouped together in Home Assistant
+LIVING_AREA_LIGHTS = {
+    "35",  # Entry Ceiling
+    "36",  # Living Edge
+    "37",  # Livrm Ceiling A
+    "38",  # Livrm Ceiling B
+    "39",  # Livrm Accent A
+    "40",  # Livrm Accent B
+    "41",  # Sofa Ceiling
+    "42",  # Kitchen Ceiling
+    "44",  # D/S Slide
+    "45",  # Dinette
+    "46",  # Sink
+    "47",  # Midship
+}
+
+BEDROOM_AREA_LIGHTS = {
+    "25",  # Bed Ceiling Lts A
+    "26",  # Bed Ceiling Lts B
+    "27",  # Bed Accent
+    "28",  # Bed Vanity
+    "29",  # Courtesy
+    "56",  # Bed Reading
+}
+
+BATHROOM_AREA_LIGHTS = {
+    "30",  # RR Bath Ceiling
+    "31",  # RR Bath Lav Lts
+    "32",  # RR Bath Accent
+    "33",  # Mid Bath Ceiling
+    "34",  # Mid Bath Accent
+}
+
+EXTERIOR_AREA_LIGHTS = {
+    "51",  # Awning D/S
+    "52",  # Awning P/S
+    "53",  # Cargo
+    "54",  # Under Slide
+    "57",  # Security D/S
+    "58",  # Security P/S
+    "59",  # Security Motion
+    "60",  # Porch
+}
+
 # Human-friendly labels for dimmer/light instances (from actual RV device mapping)
 DIMMER_INSTANCE_LABELS: dict[str, str] = {
     # Lights (25-60)

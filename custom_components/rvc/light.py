@@ -23,6 +23,10 @@ from .const import (
     DIMMER_INSTANCE_LABELS,
     SWITCH_INSTANCE_LABELS,
     DIMMABLE_LIGHTS,
+    LIVING_AREA_LIGHTS,
+    BEDROOM_AREA_LIGHTS,
+    BATHROOM_AREA_LIGHTS,
+    EXTERIOR_AREA_LIGHTS,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -158,20 +162,29 @@ class RVCLight(LightEntity):
 
     @property
     def device_info(self) -> DeviceInfo:
-        """Return device information to group entities."""
-        # Determine device grouping by instance range and type
-        instance_num = int(self._instance)
-
-        if self._is_dimmable:
-            # Dimmable lights (instances 25-35)
-            device_id = "dimmer_module"
-            device_name = "RVC Dimmer Module"
-            model = "DC Dimmer Controller"
+        """Return device information to group entities by area."""
+        # Determine device grouping by area
+        if self._instance in LIVING_AREA_LIGHTS:
+            device_id = "living_area_lights"
+            device_name = "Living Area Lights"
+            model = "Living Area Lighting"
+        elif self._instance in BEDROOM_AREA_LIGHTS:
+            device_id = "bedroom_area_lights"
+            device_name = "Bedroom Area Lights"
+            model = "Bedroom Lighting"
+        elif self._instance in BATHROOM_AREA_LIGHTS:
+            device_id = "bathroom_area_lights"
+            device_name = "Bathroom Area Lights"
+            model = "Bathroom Lighting"
+        elif self._instance in EXTERIOR_AREA_LIGHTS:
+            device_id = "exterior_area_lights"
+            device_name = "Exterior Lights"
+            model = "Exterior Lighting"
         else:
-            # Relay lights (instances 36+)
-            device_id = "relay_module"
-            device_name = "RVC Relay Module"
-            model = "DC Relay Controller"
+            # Fallback for unmapped lights
+            device_id = "other_lights"
+            device_name = "Other Lights"
+            model = "Miscellaneous Lighting"
 
         return DeviceInfo(
             identifiers={(DOMAIN, device_id)},
