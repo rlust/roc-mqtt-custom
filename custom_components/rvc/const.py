@@ -58,9 +58,7 @@ DIMMER_INSTANCE_LABELS: dict[str, str] = {
     "45": "Dinette",
     "46": "Sink",
     "47": "Midship",
-    # 48 missing
-    "49": "Door Awning Extend",
-    "50": "Door Awning Retract",
+    # 48-50 are awning controls (handled by cover platform)
     "51": "Awning D/S",
     "52": "Awning P/S",
     "53": "Cargo",
@@ -105,7 +103,7 @@ COVER_INSTANCE_LABELS: dict[str, str] = {
 }
 
 # Awning definitions for cover entities
-# Each awning has extend, retract, and stop instance IDs
+# Each awning has extend, retract, and optional stop instance IDs
 AWNING_DEFINITIONS: dict[str, dict[str, str]] = {
     "rear_awning": {
         "name": "Rear Awning",
@@ -118,5 +116,11 @@ AWNING_DEFINITIONS: dict[str, dict[str, str]] = {
         "extend": "22",
         "retract": "23",
         "stop": "24",
+    },
+    "door_awning": {
+        "name": "Door Awning",
+        "extend": "49",
+        "retract": "50",
+        "stop": "",  # No stop instance for door awning
     },
 }

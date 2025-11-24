@@ -75,7 +75,11 @@ async def async_setup_entry(
 
         # Check if this instance belongs to any awning
         for awning_id, entity in entities.items():
-            if inst_str in [entity._extend_instance, entity._retract_instance, entity._stop_instance]:
+            # Build list of instances, excluding empty stop_instance
+            instances = [entity._extend_instance, entity._retract_instance]
+            if entity._stop_instance:
+                instances.append(entity._stop_instance)
+            if inst_str in instances:
                 entity.handle_mqtt(inst_str, payload)
                 break
 
@@ -105,11 +109,18 @@ class RVCAwning(CoverEntity):
 
         # Cover attributes
         self._attr_device_class = CoverDeviceClass.AWNING
-        self._attr_supported_features = (
-            CoverEntityFeature.OPEN |
-            CoverEntityFeature.CLOSE |
-            CoverEntityFeature.STOP
-        )
+        # Only include STOP feature if stop_instance is defined
+        if stop_instance:
+            self._attr_supported_features = (
+                CoverEntityFeature.OPEN |
+                CoverEntityFeature.CLOSE |
+                CoverEntityFeature.STOP
+            )
+        else:
+            self._attr_supported_features = (
+                CoverEntityFeature.OPEN |
+                CoverEntityFeature.CLOSE
+            )
 
         # State tracking
         self._attr_is_closed = True  # Default to retracted
@@ -124,7 +135,7 @@ class RVCAwning(CoverEntity):
             "rvc_awning_id": awning_id,
             "rvc_extend_instance": extend_instance,
             "rvc_retract_instance": retract_instance,
-            "rvc_stop_instance": stop_instance,
+            "rvc_stop_instance": stop_instance if stop_instance else "N/A",
             "rvc_topic_prefix": topic_prefix,
             "last_command": None,
             "last_mqtt_update": None,
@@ -269,6 +280,14 @@ class RVCAwning(CoverEntity):
 
     async def async_stop_cover(self, **kwargs: Any) -> None:
         """Stop the awning."""
+        # Guard: only process if stop_instance is defined
+        if not self._stop_instance:
+            _LOGGER.warning(
+                "Awning %s has no stop instance - stop command ignored",
+                self._awning_id
+            )
+            return
+
         self._attr_is_opening = False
         self._attr_is_closing = False
 
