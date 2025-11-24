@@ -1,4 +1,4 @@
-"""Platform for RV-C awning covers using Node-RED MQTT format."""
+"""Platform for RV-C awning and slide covers using Node-RED MQTT format."""
 from __future__ import annotations
 
 import logging
@@ -21,6 +21,7 @@ from .const import (
     DOMAIN,
     SIGNAL_DISCOVERY,
     AWNING_DEFINITIONS,
+    SLIDE_DEFINITIONS,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -34,15 +35,17 @@ async def async_setup_entry(
     """Set up RV-C covers - pre-create all mapped entities on startup."""
 
     data = hass.data[DOMAIN][entry.entry_id]
-    entities: dict[str, RVCAwning] = {}
+    entities: dict[str, CoverEntity] = {}
     topic_prefix = entry.data.get("topic_prefix", "rvc")
 
+    initial_entities = []
+
+    # Create awning entities
     _LOGGER.info(
         "Pre-creating %d awning cover entities from mappings",
         len(AWNING_DEFINITIONS),
     )
 
-    initial_entities = []
     for awning_id, awning_config in AWNING_DEFINITIONS.items():
         entity = RVCAwning(
             name=awning_config["name"],
@@ -52,7 +55,7 @@ async def async_setup_entry(
             stop_instance=awning_config["stop"],
             topic_prefix=topic_prefix,
         )
-        entities[awning_id] = entity
+        entities[f"awning_{awning_id}"] = entity
         initial_entities.append(entity)
         _LOGGER.debug(
             "Pre-created awning entity: id=%s, name='%s', extend=%s, retract=%s, stop=%s",
@@ -60,24 +63,49 @@ async def async_setup_entry(
             awning_config["extend"], awning_config["retract"], awning_config["stop"]
         )
 
+    # Create slide entities
+    _LOGGER.info(
+        "Pre-creating %d slide cover entities from mappings",
+        len(SLIDE_DEFINITIONS),
+    )
+
+    for slide_id, slide_config in SLIDE_DEFINITIONS.items():
+        entity = RVCSlide(
+            name=slide_config["name"],
+            slide_id=slide_id,
+            extend_instance=slide_config["extend"],
+            retract_instance=slide_config["retract"],
+            topic_prefix=topic_prefix,
+        )
+        entities[f"slide_{slide_id}"] = entity
+        initial_entities.append(entity)
+        _LOGGER.debug(
+            "Pre-created slide entity: id=%s, name='%s', extend=%s, retract=%s",
+            slide_id, slide_config["name"],
+            slide_config["extend"], slide_config["retract"]
+        )
+
     # Add all pre-created entities at once
     async_add_entities(initial_entities)
-    _LOGGER.info("Successfully added %d awning cover entities", len(initial_entities))
+    _LOGGER.info(
+        "Successfully added %d cover entities (%d awnings, %d slides)",
+        len(initial_entities), len(AWNING_DEFINITIONS), len(SLIDE_DEFINITIONS)
+    )
 
     # Discovery callback handles MQTT updates
     async def _discovery_callback(discovery: dict[str, Any]) -> None:
-        if discovery["type"] != "light":  # Awnings use DC_DIMMER_STATUS messages
+        if discovery["type"] != "light":  # Covers use DC_DIMMER_STATUS messages
             return
 
         instance = discovery["instance"]
         inst_str = str(instance)
         payload = discovery["payload"]
 
-        # Check if this instance belongs to any awning
-        for awning_id, entity in entities.items():
-            # Build list of instances, excluding empty stop_instance
+        # Check if this instance belongs to any cover entity
+        for entity_id, entity in entities.items():
             instances = [entity._extend_instance, entity._retract_instance]
-            if entity._stop_instance:
+            # Add stop_instance for awnings that have it
+            if hasattr(entity, '_stop_instance') and entity._stop_instance:
                 instances.append(entity._stop_instance)
             if inst_str in instances:
                 entity.handle_mqtt(inst_str, payload)
@@ -301,6 +329,209 @@ class RVCAwning(CoverEntity):
         _LOGGER.debug(
             "Awning %s stopping: publishing to %s: '%s'",
             self._awning_id, self._command_topic, payload
+        )
+
+        await mqtt.async_publish(
+            self.hass,
+            self._command_topic,
+            payload,
+            qos=0,
+            retain=False,
+        )
+
+        self.async_write_ha_state()
+
+
+class RVCSlide(CoverEntity):
+    """Representation of an RV-C slide cover.
+
+    WARNING: Slides control heavy motors. Ensure the area is clear before operating!
+    """
+
+    def __init__(
+        self,
+        name: str,
+        slide_id: str,
+        extend_instance: str,
+        retract_instance: str,
+        topic_prefix: str,
+    ) -> None:
+        self._attr_name = name
+        self._attr_has_entity_name = False  # Use our name as-is
+        self._slide_id = slide_id
+        self._extend_instance = extend_instance
+        self._retract_instance = retract_instance
+        self._topic_prefix = topic_prefix
+
+        # Cover attributes - slides are like shades (extend out/retract in)
+        self._attr_device_class = CoverDeviceClass.SHADE
+        self._attr_supported_features = (
+            CoverEntityFeature.OPEN |
+            CoverEntityFeature.CLOSE
+        )
+
+        # State tracking
+        self._attr_is_closed = True  # Default to retracted
+        self._attr_is_closing = False
+        self._attr_is_opening = False
+        self._attr_available = True
+        self._attr_assumed_state = True  # Until MQTT confirms
+        self._last_update_time: float | None = None
+
+        # Store instance numbers as extra state attributes
+        self._attr_extra_state_attributes = {
+            "rvc_slide_id": slide_id,
+            "rvc_extend_instance": extend_instance,
+            "rvc_retract_instance": retract_instance,
+            "rvc_topic_prefix": topic_prefix,
+            "warning": "CAUTION: Motor control - ensure area is clear!",
+            "last_command": None,
+            "last_mqtt_update": None,
+        }
+
+        _LOGGER.info(
+            "Initialized RVCSlide: name='%s', extend=%s, retract=%s",
+            name, extend_instance, retract_instance
+        )
+
+    @property
+    def unique_id(self) -> str:
+        return f"rvc_slide_{self._slide_id}"
+
+    @property
+    def available(self) -> bool:
+        """Return True if entity is available."""
+        return self._attr_available
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return device information to group entities."""
+        return DeviceInfo(
+            identifiers={(DOMAIN, "slide_system")},
+            name="RVC Slide System",
+            manufacturer="RV-C",
+            model="Slide Controller",
+            via_device=(DOMAIN, "main_controller"),
+        )
+
+    @property
+    def _command_topic(self) -> str:
+        # Node-RED format: single topic for all commands
+        return "node-red/rvc/commands"
+
+    def handle_mqtt(self, instance: str, payload: dict[str, Any]) -> None:
+        """Update internal state from an MQTT payload."""
+        _LOGGER.debug(
+            "Slide %s received MQTT payload for instance %s: %s",
+            self._slide_id, instance, payload
+        )
+
+        # Disable assumed_state on first MQTT message
+        if self._attr_assumed_state:
+            _LOGGER.info(
+                "Slide %s received first MQTT status - state now confirmed",
+                self._slide_id
+            )
+            self._attr_assumed_state = False
+
+        # Track last update time
+        self._last_update_time = time.time()
+
+        # Determine state from brightness/operating status
+        if "operating status (brightness)" in payload:
+            try:
+                brightness = float(payload["operating status (brightness)"])
+                # If extend instance is active (>0), slide is extending
+                if instance == self._extend_instance:
+                    if brightness > 0:
+                        self._attr_is_opening = True
+                        self._attr_is_closing = False
+                    else:
+                        self._attr_is_opening = False
+                # If retract instance is active (>0), slide is retracting
+                elif instance == self._retract_instance:
+                    if brightness > 0:
+                        self._attr_is_closing = True
+                        self._attr_is_opening = False
+                    else:
+                        self._attr_is_closing = False
+            except (TypeError, ValueError):
+                pass
+
+        # Capture diagnostic attributes
+        attrs = self._attr_extra_state_attributes
+
+        if "last command definition" in payload:
+            attrs["last_command"] = payload["last command definition"]
+        elif "last command" in payload:
+            attrs["last_command"] = f"Code {payload['last command']}"
+
+        if "timestamp" in payload:
+            attrs["last_mqtt_update"] = payload["timestamp"]
+
+        self.async_write_ha_state()
+
+    async def async_open_cover(self, **kwargs: Any) -> None:
+        """Extend the slide.
+
+        WARNING: Ensure the area is clear before extending!
+        """
+        # Log warning for motor operation
+        _LOGGER.warning(
+            "SLIDE MOTOR: %s extending - ensure area is clear!",
+            self._attr_name
+        )
+
+        self._attr_is_opening = True
+        self._attr_is_closing = False
+        self._attr_is_closed = False
+
+        # Node-RED format: "instance command brightness"
+        # Command 2 = Turn ON (extend)
+        instance = int(self._extend_instance)
+        command = 2
+        brightness = 100
+        payload = f"{instance} {command} {brightness}"
+
+        _LOGGER.info(
+            "Slide %s extending: publishing to %s: '%s'",
+            self._slide_id, self._command_topic, payload
+        )
+
+        await mqtt.async_publish(
+            self.hass,
+            self._command_topic,
+            payload,
+            qos=0,
+            retain=False,
+        )
+
+        self.async_write_ha_state()
+
+    async def async_close_cover(self, **kwargs: Any) -> None:
+        """Retract the slide.
+
+        WARNING: Ensure the area is clear before retracting!
+        """
+        # Log warning for motor operation
+        _LOGGER.warning(
+            "SLIDE MOTOR: %s retracting - ensure area is clear!",
+            self._attr_name
+        )
+
+        self._attr_is_closing = True
+        self._attr_is_opening = False
+
+        # Node-RED format: "instance command brightness"
+        # Command 2 = Turn ON (retract)
+        instance = int(self._retract_instance)
+        command = 2
+        brightness = 100
+        payload = f"{instance} {command} {brightness}"
+
+        _LOGGER.info(
+            "Slide %s retracting: publishing to %s: '%s'",
+            self._slide_id, self._command_topic, payload
         )
 
         await mqtt.async_publish(

@@ -129,3 +129,29 @@ AWNING_DEFINITIONS: dict[str, dict[str, str]] = {
         "stop": "",  # No stop instance for door awning
     },
 }
+
+# Slide definitions for cover entities
+# WARNING: Slides control heavy motors - ensure area is clear before operating!
+# Each slide has extend and retract instance IDs (no stop function)
+SLIDE_DEFINITIONS: dict[str, dict[str, str]] = {
+    "kitchen_slide": {
+        "name": "Kitchen Slide",
+        "extend": "181",
+        "retract": "182",
+    },
+    "super_slide": {
+        "name": "Super Slide",
+        "extend": "183",
+        "retract": "184",
+    },
+    "vanity_slide": {
+        "name": "Vanity Slide",
+        "extend": "185",
+        "retract": "186",
+    },
+    "bed_slide": {
+        "name": "Bed Slide",
+        "extend": "187",
+        "retract": "188",
+    },
+}
