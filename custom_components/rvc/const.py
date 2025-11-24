@@ -15,6 +15,7 @@ PLATFORMS: list[Platform] = [
     Platform.CLIMATE,
     Platform.SENSOR,
     Platform.LOCK,
+    Platform.COVER,
 ]
 
 # Node-RED MQTT Command Format
@@ -101,4 +102,21 @@ COVER_INSTANCE_LABELS: dict[str, str] = {
     "186": "Vanity Slide",  # Retract command
     "187": "Bed Slide",
     "188": "Bed Slide",  # Retract command
+}
+
+# Awning definitions for cover entities
+# Each awning has extend, retract, and stop instance IDs
+AWNING_DEFINITIONS: dict[str, dict[str, str]] = {
+    "rear_awning": {
+        "name": "Rear Awning",
+        "extend": "19",
+        "retract": "20",
+        "stop": "21",
+    },
+    "front_awning": {
+        "name": "Front Awning",
+        "extend": "22",
+        "retract": "23",
+        "stop": "24",
+    },
 }
