@@ -16,7 +16,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from .const import (
     DOMAIN,
     SIGNAL_DISCOVERY,
-    LOCK_INSTANCE_LABELS,
+    LOCK_DEFINITIONS,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -35,42 +35,44 @@ async def async_setup_entry(
 
     _LOGGER.info(
         "Pre-creating %d lock entities from mappings",
-        len(LOCK_INSTANCE_LABELS),
+        len(LOCK_DEFINITIONS),
     )
 
     initial_entities = []
-    for inst_str, name in LOCK_INSTANCE_LABELS.items():
+    for lock_id, lock_config in LOCK_DEFINITIONS.items():
         entity = RVCLock(
-            name=name,
-            instance_id=inst_str,
+            name=lock_config["name"],
+            lock_id=lock_id,
+            lock_instance=lock_config["lock"],
+            unlock_instance=lock_config["unlock"],
             topic_prefix=topic_prefix,
         )
-        entities[inst_str] = entity
+        entities[lock_id] = entity
         initial_entities.append(entity)
-        _LOGGER.debug("Pre-created lock entity: instance=%s, name='%s'", inst_str, name)
+        _LOGGER.debug(
+            "Pre-created lock entity: id=%s, name='%s', lock=%s, unlock=%s",
+            lock_id, lock_config["name"],
+            lock_config["lock"], lock_config["unlock"]
+        )
 
     # Add all pre-created entities at once
     async_add_entities(initial_entities)
     _LOGGER.info("Successfully added %d lock entities", len(initial_entities))
 
-    # Discovery callback handles MQTT updates and any unmapped instances
+    # Discovery callback handles MQTT updates
     async def _discovery_callback(discovery: dict[str, Any]) -> None:
-        if discovery["type"] != "light":  # Locks use same DC_DIMMER_STATUS messages
+        if discovery["type"] != "light":  # Locks use DC_DIMMER_STATUS messages
             return
 
         instance = discovery["instance"]
         inst_str = str(instance)
-
-        # Only process if this is a lock instance
-        if inst_str not in LOCK_INSTANCE_LABELS:
-            return
-
         payload = discovery["payload"]
-        entity = entities.get(inst_str)
 
-        if entity is not None:
-            # Update entity state from MQTT payload
-            entity.handle_mqtt(payload)
+        # Check if this instance belongs to any lock
+        for lock_id, entity in entities.items():
+            if inst_str in [entity._lock_instance, entity._unlock_instance]:
+                entity.handle_mqtt(inst_str, payload)
+                break
 
     unsub = async_dispatcher_connect(hass, SIGNAL_DISCOVERY, _discovery_callback)
     data["unsub_dispatchers"].append(unsub)
@@ -79,10 +81,19 @@ async def async_setup_entry(
 class RVCLock(LockEntity):
     """Representation of an RV-C door lock."""
 
-    def __init__(self, name: str, instance_id: str, topic_prefix: str) -> None:
+    def __init__(
+        self,
+        name: str,
+        lock_id: str,
+        lock_instance: str,
+        unlock_instance: str,
+        topic_prefix: str,
+    ) -> None:
         self._attr_name = name
         self._attr_has_entity_name = False  # Use our name as-is
-        self._instance = instance_id
+        self._lock_id = lock_id
+        self._lock_instance = lock_instance
+        self._unlock_instance = unlock_instance
         self._topic_prefix = topic_prefix
         self._attr_is_locked = True  # Default to locked
 
@@ -91,9 +102,11 @@ class RVCLock(LockEntity):
         self._attr_assumed_state = True  # Show uncertainty until MQTT confirms
         self._last_update_time: float | None = None
 
-        # Store instance number as extra state attribute
+        # Store instance numbers as extra state attributes
         self._attr_extra_state_attributes = {
-            "rvc_instance": instance_id,
+            "rvc_lock_id": lock_id,
+            "rvc_lock_instance": lock_instance,
+            "rvc_unlock_instance": unlock_instance,
             "rvc_topic_prefix": topic_prefix,
             "last_command": None,
             "load_status": None,
@@ -101,13 +114,13 @@ class RVCLock(LockEntity):
         }
 
         _LOGGER.info(
-            "Initialized RVCLock: name='%s', instance=%s",
-            name, instance_id
+            "Initialized RVCLock: name='%s', lock=%s, unlock=%s",
+            name, lock_instance, unlock_instance
         )
 
     @property
     def unique_id(self) -> str:
-        return f"rvc_lock_{self._instance}"
+        return f"rvc_lock_{self._lock_id}"
 
     @property
     def available(self) -> bool:
@@ -130,30 +143,33 @@ class RVCLock(LockEntity):
         # Node-RED format: single topic for all commands
         return "node-red/rvc/commands"
 
-    def handle_mqtt(self, payload: dict[str, Any]) -> None:
+    def handle_mqtt(self, instance: str, payload: dict[str, Any]) -> None:
         """Update internal state from an MQTT payload."""
         _LOGGER.debug(
-            "Lock %s received MQTT payload: %s",
-            self._instance, payload
+            "Lock %s received MQTT payload for instance %s: %s",
+            self._lock_id, instance, payload
         )
 
         # Disable assumed_state on first MQTT message
         if self._attr_assumed_state:
             _LOGGER.info(
                 "Lock %s received first MQTT status - state now confirmed",
-                self._instance
+                self._lock_id
             )
             self._attr_assumed_state = False
 
         # Track last update time
         self._last_update_time = time.time()
 
-        # Determine lock state from brightness/operating status
-        # 0 = locked, >0 = unlocked
+        # Determine lock state from which instance is active
+        # Lock instance active = locked, Unlock instance active = unlocked
         if "operating status (brightness)" in payload:
             try:
                 brightness = float(payload["operating status (brightness)"])
-                self._attr_is_locked = brightness == 0
+                if instance == self._lock_instance and brightness > 0:
+                    self._attr_is_locked = True
+                elif instance == self._unlock_instance and brightness > 0:
+                    self._attr_is_locked = False
             except (TypeError, ValueError):
                 pass
 
@@ -178,15 +194,15 @@ class RVCLock(LockEntity):
         self._attr_is_locked = True
 
         # Node-RED format: "instance command brightness"
-        # Command 3 = Turn OFF (lock)
-        instance = int(self._instance)
-        command = 3
-        brightness = 0
+        # Fire lock instance with command 2 (ON) - momentary trigger
+        instance = int(self._lock_instance)
+        command = 2
+        brightness = 100
         payload = f"{instance} {command} {brightness}"
 
         _LOGGER.debug(
             "Lock %s locking: publishing to %s: '%s'",
-            self._instance, self._command_topic, payload
+            self._lock_id, self._command_topic, payload
         )
 
         await mqtt.async_publish(
@@ -204,15 +220,15 @@ class RVCLock(LockEntity):
         self._attr_is_locked = False
 
         # Node-RED format: "instance command brightness"
-        # Command 2 = Turn ON (unlock)
-        instance = int(self._instance)
+        # Fire unlock instance with command 2 (ON) - momentary trigger
+        instance = int(self._unlock_instance)
         command = 2
         brightness = 100
         payload = f"{instance} {command} {brightness}"
 
         _LOGGER.debug(
             "Lock %s unlocking: publishing to %s: '%s'",
-            self._instance, self._command_topic, payload
+            self._lock_id, self._command_topic, payload
         )
 
         await mqtt.async_publish(

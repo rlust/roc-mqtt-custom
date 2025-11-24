@@ -74,15 +74,20 @@ DIMMER_INSTANCE_LABELS: dict[str, str] = {
 # Switch/relay instance labels (non-dimmable devices)
 SWITCH_INSTANCE_LABELS: dict[str, str] = {
     "13": "Satellite Dome",
-    "14": "Entry Door",
+    # 14 and 17 are door lock controls (handled by lock platform)
     "15": "Gen Stop",
     "16": "Water Pump",
     "18": "Gen Start",
 }
 
-# Lock instance labels (door locks)
-LOCK_INSTANCE_LABELS: dict[str, str] = {
-    "17": "Entry Door Unlock",
+# Lock definitions for door lock entities
+# Each lock has separate lock and unlock instance IDs (momentary triggers)
+LOCK_DEFINITIONS: dict[str, dict[str, str]] = {
+    "entry_door": {
+        "name": "Entry Door",
+        "lock": "14",    # Instance to lock the door
+        "unlock": "17",  # Instance to unlock the door
+    },
 }
 
 # Cover/slide/awning instance labels
