@@ -313,25 +313,35 @@ class RVCLight(LightEntity):
 
         self._attr_is_on = True
 
-        # Get brightness from kwargs or use current/default
-        brightness = kwargs.get(ATTR_BRIGHTNESS, self._attr_brightness or 255)
-        brightness = max(0, min(255, int(brightness)))
-        self._attr_brightness = brightness
-
-        # Convert HA brightness (0-255) to RV-C level (0-100)
-        desired_level = int(round(brightness / 2.55))
-        desired_level = max(1, min(100, desired_level))  # Ensure at least 1
-
         # Node-RED format: "instance command brightness"
         # Command 2 = Turn ON
         instance = int(self._instance)
         command = 2
-        payload = f"{instance} {command} {desired_level}"
 
-        _LOGGER.debug(
-            "Light %s turning ON: brightness=%d%%, publishing to %s: '%s'",
-            self._instance, desired_level, self._command_topic, payload
-        )
+        if self._is_dimmable:
+            # Dimmable lights: use brightness from kwargs or current value
+            brightness = kwargs.get(ATTR_BRIGHTNESS, self._attr_brightness or 255)
+            brightness = max(0, min(255, int(brightness)))
+            self._attr_brightness = brightness
+
+            # Convert HA brightness (0-255) to RV-C level (0-100)
+            desired_level = int(round(brightness / 2.55))
+            desired_level = max(1, min(100, desired_level))  # Ensure at least 1
+
+            payload = f"{instance} {command} {desired_level}"
+
+            _LOGGER.info(
+                "Light %s (%s) turning ON with dimming: brightness=%d%%, publishing to %s: '%s'",
+                self._instance, self._attr_name, desired_level, self._command_topic, payload
+            )
+        else:
+            # Non-dimmable (relay) lights: always full brightness
+            payload = f"{instance} {command} 100"
+
+            _LOGGER.info(
+                "Light %s (%s) turning ON (relay): publishing to %s: '%s'",
+                self._instance, self._attr_name, self._command_topic, payload
+            )
 
         await mqtt.async_publish(
             self.hass,
@@ -356,9 +366,9 @@ class RVCLight(LightEntity):
         brightness = 0
         payload = f"{instance} {command} {brightness}"
 
-        _LOGGER.debug(
-            "Light %s turning OFF: publishing to %s: '%s'",
-            self._instance, self._command_topic, payload
+        _LOGGER.info(
+            "Light %s (%s) turning OFF: publishing to %s: '%s'",
+            self._instance, self._attr_name, self._command_topic, payload
         )
 
         await mqtt.async_publish(
