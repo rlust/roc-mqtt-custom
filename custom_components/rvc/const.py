@@ -16,6 +16,7 @@ PLATFORMS: list[Platform] = [
     Platform.SENSOR,
     Platform.LOCK,
     Platform.COVER,
+    Platform.DEVICE_TRACKER,
 ]
 
 # Node-RED MQTT Command Format

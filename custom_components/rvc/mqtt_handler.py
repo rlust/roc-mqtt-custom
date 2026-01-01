@@ -53,6 +53,19 @@ class RVCMQTTHandler:
             _LOGGER.warning("RVC MQTT: invalid JSON payload on %s: %s", msg.topic, msg.payload)
             return
 
+        # Special handling for GPS data (CP/GPSDATA topic)
+        if "CP/GPSDATA" in msg.topic or "GPSDATA" in msg.topic:
+            _LOGGER.debug("RVC MQTT: GPS data received on %s", msg.topic)
+            # GPS data doesn't have instance/name like other RV-C messages
+            discovery = {
+                "type": "device_tracker",
+                "instance": "gps",
+                "name": "GPS",
+                "payload": payload,
+            }
+            async_dispatcher_send(self.hass, SIGNAL_DISCOVERY, discovery)
+            return
+
         # A lot of your payloads have a "name" and "instance"
         raw_name = str(payload.get("name", "") or "")
         instance = payload.get("instance")
