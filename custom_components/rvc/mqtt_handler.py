@@ -55,7 +55,8 @@ class RVCMQTTHandler:
 
         # Special handling for GPS data (CP/GPSDATA topic)
         if "CP/GPSDATA" in msg.topic or "GPSDATA" in msg.topic:
-            _LOGGER.debug("RVC MQTT: GPS data received on %s", msg.topic)
+            _LOGGER.info("RVC MQTT: GPS data received on %s - lat=%.6f, lon=%.6f",
+                        msg.topic, payload.get("lat", 0), payload.get("lon", 0))
             # GPS data doesn't have instance/name like other RV-C messages
             discovery = {
                 "type": "device_tracker",
