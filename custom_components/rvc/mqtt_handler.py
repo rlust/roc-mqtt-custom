@@ -26,6 +26,7 @@ class RVCMQTTHandler:
 
     async def async_subscribe(self) -> None:
         """Subscribe to RV-C topics."""
+        # Subscribe to main RV-C prefix (e.g., RVC/#)
         topic = f"{self.prefix}/#"
         _LOGGER.info(
             "RVC MQTT Handler: subscribing to topic pattern '%s' (prefix='%s', discovery=%s)",
@@ -33,6 +34,12 @@ class RVCMQTTHandler:
         )
         unsub = await mqtt.async_subscribe(self.hass, topic, self._message_received, 0)
         self._unsubs.append(unsub)
+
+        # Also subscribe to CP/# for GPS data (separate tree)
+        gps_topic = "CP/#"
+        _LOGGER.info("RVC MQTT Handler: also subscribing to GPS topic pattern '%s'", gps_topic)
+        unsub_gps = await mqtt.async_subscribe(self.hass, gps_topic, self._message_received, 0)
+        self._unsubs.append(unsub_gps)
 
     async def async_unsubscribe(self) -> None:
         """Unsubscribe from all topics."""
