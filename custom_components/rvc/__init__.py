@@ -7,7 +7,12 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.typing import ConfigType
 
-from .const import DOMAIN, PLATFORMS
+from .const import (
+    CONF_AUTO_DISCOVERY,
+    CONF_TOPIC_PREFIX,
+    DOMAIN,
+    PLATFORMS,
+)
 from .mqtt_handler import RVCMQTTHandler
 
 _LOGGER = logging.getLogger(__name__)
@@ -22,7 +27,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up RVC from a config entry."""
     _LOGGER.info("Setting up RVC integration entry %s", entry.entry_id)
 
-    handler = RVCMQTTHandler(hass, entry.data)
+    config = _ensure_entry_options(hass, entry)
+
+    handler = RVCMQTTHandler(hass, config)
     await handler.async_subscribe()
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
@@ -31,6 +38,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     }
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    entry.async_on_unload(entry.add_update_listener(_async_update_listener))
 
     # Note: Services are registered via entity platform in light.py
 
@@ -52,3 +61,29 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             unsub()
 
     return unload_ok
+
+
+async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Handle config entry updates by reloading the integration."""
+    await hass.config_entries.async_reload(entry.entry_id)
+
+
+def _ensure_entry_options(hass: HomeAssistant, entry: ConfigEntry) -> dict:
+    """Ensure topic prefix and discovery flags live in entry.options."""
+    desired = dict(entry.options)
+    updated = False
+
+    defaults: dict[str, object] = {
+        CONF_TOPIC_PREFIX: entry.data.get(CONF_TOPIC_PREFIX, "rvc"),
+        CONF_AUTO_DISCOVERY: entry.data.get(CONF_AUTO_DISCOVERY, True),
+    }
+
+    for key, value in defaults.items():
+        if key not in desired:
+            desired[key] = value
+            updated = True
+
+    if updated:
+        hass.config_entries.async_update_entry(entry, options=desired)
+
+    return desired

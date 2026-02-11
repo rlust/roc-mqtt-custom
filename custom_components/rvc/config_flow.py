@@ -18,6 +18,8 @@ class RVCConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_user(self, user_input: dict[str, Any] | None = None):
         """Handle the initial step."""
         if user_input is not None:
+            await self.async_set_unique_id(DOMAIN)
+            self._abort_if_unique_id_configured()
             return self.async_create_entry(title="RV-C", data=user_input)
 
         data_schema = vol.Schema(
@@ -45,15 +47,18 @@ class RVCOptionsFlow(config_entries.OptionsFlow):
         if user_input is not None:
             return self.async_create_entry(title="Options", data=user_input)
 
+        def _entry_value(key: str, default: Any) -> Any:
+            return self._entry.options.get(key, self._entry.data.get(key, default))
+
         data_schema = vol.Schema(
             {
                 vol.Required(
                     CONF_TOPIC_PREFIX,
-                    default=self._entry.data.get(CONF_TOPIC_PREFIX, "rvc"),
+                    default=_entry_value(CONF_TOPIC_PREFIX, "rvc"),
                 ): str,
                 vol.Optional(
                     CONF_AUTO_DISCOVERY,
-                    default=self._entry.data.get(CONF_AUTO_DISCOVERY, True),
+                    default=_entry_value(CONF_AUTO_DISCOVERY, True),
                 ): bool,
             }
         )

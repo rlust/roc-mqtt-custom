@@ -18,6 +18,7 @@ from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import (
+    CONF_TOPIC_PREFIX,
     DOMAIN,
     SIGNAL_DISCOVERY,
     DIMMER_INSTANCE_LABELS,
@@ -32,6 +33,14 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 
+from typing import Any
+...
+
+def _get_entry_option(entry: ConfigEntry, key: str, default: Any) -> Any:
+    """Helper to read config values from options first, then data."""
+    return entry.options.get(key, entry.data.get(key, default))
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: ConfigEntry,
@@ -41,7 +50,7 @@ async def async_setup_entry(
 
     data = hass.data[DOMAIN][entry.entry_id]
     entities: dict[str, RVCLight] = {}
-    topic_prefix = entry.data.get("topic_prefix", "rvc")
+    topic_prefix = _get_entry_option(entry, CONF_TOPIC_PREFIX, "rvc")
 
     # Pre-create all mapped light entities from const.py mappings
     # They will start as "unavailable" and become available when MQTT messages arrive
