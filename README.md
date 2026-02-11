@@ -14,6 +14,7 @@ Custom Home Assistant integration to monitor and control RV-C devices via MQTT.
   - Sensors
   - Relay switches (satellite dome, water pump, etc.)
   - Generator control buttons (start/stop)
+  - Door lock buttons (separate lock + unlock triggers)
 - UI-based configuration (config flow + options flow)
 - Built-in availability monitoring for every platform
 - Command topic pattern for bridge / CAN gateway (default `node-red/rvc/commands`):

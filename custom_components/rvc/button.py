@@ -17,6 +17,7 @@ from .const import (
     DEFAULT_TOPIC_PREFIX,
     DOMAIN,
     BUTTON_DEFINITIONS,
+    LOCK_DEFINITIONS,
 )
 
 import logging
@@ -36,17 +37,43 @@ async def async_setup_entry(
     command_topic = _get_entry_option(entry, CONF_COMMAND_TOPIC, DEFAULT_COMMAND_TOPIC)
     topic_prefix = _get_entry_option(entry, CONF_TOPIC_PREFIX, DEFAULT_TOPIC_PREFIX)
 
+    button_configs = []
+    for key, definition in BUTTON_DEFINITIONS.items():
+        button_configs.append({
+            "key": key,
+            "name": definition["name"],
+            "instance": definition["instance"],
+            "command": int(definition.get("command", "2")),
+            "icon": definition.get("icon"),
+        })
+
+    for lock_id, lock_def in LOCK_DEFINITIONS.items():
+        button_configs.append({
+            "key": f"{lock_id}_lock",
+            "name": f"{lock_def['name']} Lock",
+            "instance": lock_def["lock"],
+            "command": 2,
+            "icon": "mdi:lock",
+        })
+        button_configs.append({
+            "key": f"{lock_id}_unlock",
+            "name": f"{lock_def['name']} Unlock",
+            "instance": lock_def["unlock"],
+            "command": 2,
+            "icon": "mdi:lock-open",
+        })
+
     entities = [
         RVCButton(
-            key,
-            definition["name"],
-            definition["instance"],
-            int(definition.get("command", "2")),
+            cfg["key"],
+            cfg["name"],
+            cfg["instance"],
+            cfg["command"],
             command_topic,
             topic_prefix,
-            definition.get("icon"),
+            cfg.get("icon"),
         )
-        for key, definition in BUTTON_DEFINITIONS.items()
+        for cfg in button_configs
     ]
 
     if entities:

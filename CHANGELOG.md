@@ -1,6 +1,23 @@
 # Changelog
 
+## 2.1.2 - 2026-02-11
+
+- Added dedicated door-lock buttons (Lock + Unlock) so each RV-C command is exposed separately.
+- Lock entities are now status-only; use the new buttons for momentary control while the lock entity shows the last reported state.
+
+## 2.1.1 - 2026-02-11
+
+- Door locks behave as momentary triggers and avoid staying latched in Locked/Unlocked when telemetry is missing.
+
 ## 2.1.0 - 2026-02-11
+
+- Added relay switch support (satellite dome + water pump) with real `switch.` entities, RestoreEntity state, and availability timeouts.
+- Added generator Start/Stop buttons so momentary RV-C commands no longer masquerade as lights.
+- Lights now own the ramp services declared in `services.yaml`, restore brightness/on state after HA restarts, and keep using configurable command topics.
+- All platforms (lights, covers, locks, climate, switches) inherit the new availability mixin so entities go unavailable when telemetry stops.
+- Climate entities restore HVAC mode/temperatures on startup; README now documents the new options flow and features.
+
+## 2.0.0 - 2026-02-11
 
 - Added relay switch support (satellite dome + water pump) with real `switch.` entities, RestoreEntity state, and availability timeouts.
 - Added generator Start/Stop buttons so momentary RV-C commands no longer masquerade as lights.
