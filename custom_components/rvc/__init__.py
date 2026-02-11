@@ -9,7 +9,15 @@ from homeassistant.helpers.typing import ConfigType
 
 from .const import (
     CONF_AUTO_DISCOVERY,
+    CONF_AVAILABILITY_TIMEOUT,
+    CONF_COMMAND_TOPIC,
+    CONF_GPS_TOPIC,
     CONF_TOPIC_PREFIX,
+    DEFAULT_AUTO_DISCOVERY,
+    DEFAULT_AVAILABILITY_TIMEOUT,
+    DEFAULT_COMMAND_TOPIC,
+    DEFAULT_GPS_TOPIC,
+    DEFAULT_TOPIC_PREFIX,
     DOMAIN,
     PLATFORMS,
 )
@@ -74,8 +82,13 @@ def _ensure_entry_options(hass: HomeAssistant, entry: ConfigEntry) -> dict:
     updated = False
 
     defaults: dict[str, object] = {
-        CONF_TOPIC_PREFIX: entry.data.get(CONF_TOPIC_PREFIX, "rvc"),
-        CONF_AUTO_DISCOVERY: entry.data.get(CONF_AUTO_DISCOVERY, True),
+        CONF_TOPIC_PREFIX: entry.data.get(CONF_TOPIC_PREFIX, DEFAULT_TOPIC_PREFIX),
+        CONF_AUTO_DISCOVERY: entry.data.get(CONF_AUTO_DISCOVERY, DEFAULT_AUTO_DISCOVERY),
+        CONF_COMMAND_TOPIC: entry.data.get(CONF_COMMAND_TOPIC, DEFAULT_COMMAND_TOPIC),
+        CONF_GPS_TOPIC: entry.data.get(CONF_GPS_TOPIC, DEFAULT_GPS_TOPIC),
+        CONF_AVAILABILITY_TIMEOUT: entry.data.get(
+            CONF_AVAILABILITY_TIMEOUT, DEFAULT_AVAILABILITY_TIMEOUT
+        ),
     }
 
     for key, value in defaults.items():

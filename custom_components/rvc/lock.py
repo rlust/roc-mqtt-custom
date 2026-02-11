@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import logging
-import time
 from typing import Any
 
 from homeassistant.components.lock import LockEntity
@@ -13,8 +12,14 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
+from .availability import AvailabilityMixin
 from .const import (
+    CONF_AVAILABILITY_TIMEOUT,
+    CONF_COMMAND_TOPIC,
     CONF_TOPIC_PREFIX,
+    DEFAULT_AVAILABILITY_TIMEOUT,
+    DEFAULT_COMMAND_TOPIC,
+    DEFAULT_TOPIC_PREFIX,
     DOMAIN,
     SIGNAL_DISCOVERY,
     LOCK_DEFINITIONS,
@@ -28,6 +33,13 @@ def _get_entry_option(entry: ConfigEntry, key: str, default: Any) -> Any:
     return entry.options.get(key, entry.data.get(key, default))
 
 
+def _coerce_int(value: Any, fallback: int) -> int:
+    try:
+        return max(0, int(value))
+    except (TypeError, ValueError):
+        return fallback
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: ConfigEntry,
@@ -37,7 +49,12 @@ async def async_setup_entry(
 
     data = hass.data[DOMAIN][entry.entry_id]
     entities: dict[str, RVCLock] = {}
-    topic_prefix = _get_entry_option(entry, CONF_TOPIC_PREFIX, "rvc")
+    topic_prefix = _get_entry_option(entry, CONF_TOPIC_PREFIX, DEFAULT_TOPIC_PREFIX)
+    command_topic = _get_entry_option(entry, CONF_COMMAND_TOPIC, DEFAULT_COMMAND_TOPIC)
+    availability_timeout = _coerce_int(
+        _get_entry_option(entry, CONF_AVAILABILITY_TIMEOUT, DEFAULT_AVAILABILITY_TIMEOUT),
+        DEFAULT_AVAILABILITY_TIMEOUT,
+    )
 
     _LOGGER.info(
         "Pre-creating %d lock entities from mappings",
@@ -52,6 +69,8 @@ async def async_setup_entry(
             lock_instance=lock_config["lock"],
             unlock_instance=lock_config["unlock"],
             topic_prefix=topic_prefix,
+            command_topic=command_topic,
+            availability_timeout=availability_timeout,
         )
         entities[lock_id] = entity
         initial_entities.append(entity)
@@ -84,7 +103,7 @@ async def async_setup_entry(
     data["unsub_dispatchers"].append(unsub)
 
 
-class RVCLock(LockEntity):
+class RVCLock(AvailabilityMixin, LockEntity):
     """Representation of an RV-C door lock."""
 
     def __init__(
@@ -94,19 +113,21 @@ class RVCLock(LockEntity):
         lock_instance: str,
         unlock_instance: str,
         topic_prefix: str,
+        command_topic: str,
+        availability_timeout: int,
     ) -> None:
+        AvailabilityMixin.__init__(self, availability_timeout)
         self._attr_name = name
         self._attr_has_entity_name = False  # Use our name as-is
         self._lock_id = lock_id
         self._lock_instance = lock_instance
         self._unlock_instance = unlock_instance
         self._topic_prefix = topic_prefix
+        self._command_topic = command_topic
         self._attr_is_locked = True  # Default to locked
 
         # Availability and state tracking
-        self._attr_available = True  # Allow immediate control
         self._attr_assumed_state = True  # Show uncertainty until MQTT confirms
-        self._last_update_time: float | None = None
 
         # Store instance numbers as extra state attributes
         self._attr_extra_state_attributes = {
@@ -129,11 +150,6 @@ class RVCLock(LockEntity):
         return f"rvc_lock_{self._lock_id}"
 
     @property
-    def available(self) -> bool:
-        """Return True if entity is available."""
-        return self._attr_available
-
-    @property
     def device_info(self) -> DeviceInfo:
         """Return device information to group entities."""
         return DeviceInfo(
@@ -143,11 +159,6 @@ class RVCLock(LockEntity):
             model="Door Lock Controller",
             via_device=(DOMAIN, "main_controller"),
         )
-
-    @property
-    def _command_topic(self) -> str:
-        # Node-RED format: single topic for all commands
-        return "node-red/rvc/commands"
 
     def handle_mqtt(self, instance: str, payload: dict[str, Any]) -> None:
         """Update internal state from an MQTT payload."""
@@ -165,7 +176,7 @@ class RVCLock(LockEntity):
             self._attr_assumed_state = False
 
         # Track last update time
-        self._last_update_time = time.time()
+        self.mark_seen_now()
 
         # Determine lock state from which instance is active
         # Lock instance active = locked, Unlock instance active = unlocked

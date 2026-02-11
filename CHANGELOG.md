@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.1.0 - 2026-02-11
+
+- Added relay switch support (satellite dome + water pump) with real `switch.` entities, RestoreEntity state, and availability timeouts.
+- Added generator Start/Stop buttons so momentary RV-C commands no longer masquerade as lights.
+- Lights now own the ramp services declared in `services.yaml`, restore brightness/on state after HA restarts, and keep using configurable command topics.
+- All platforms (lights, covers, locks, climate, switches) inherit the new availability mixin so entities go unavailable when telemetry stops.
+- Climate entities restore HVAC mode/temps on startup; README now documents the new options flow and features.
+
 ## 2.0.0 - 2026-02-11
 
 - Require Home Assistant 2025.1.0+ and expose the version in `manifest.json` for HACS.

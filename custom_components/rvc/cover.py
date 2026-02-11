@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import logging
-import time
 from typing import Any
 
 from homeassistant.components.cover import (
@@ -17,8 +16,14 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
+from .availability import AvailabilityMixin
 from .const import (
+    CONF_AVAILABILITY_TIMEOUT,
+    CONF_COMMAND_TOPIC,
     CONF_TOPIC_PREFIX,
+    DEFAULT_AVAILABILITY_TIMEOUT,
+    DEFAULT_COMMAND_TOPIC,
+    DEFAULT_TOPIC_PREFIX,
     DOMAIN,
     SIGNAL_DISCOVERY,
     AWNING_DEFINITIONS,
@@ -33,6 +38,13 @@ def _get_entry_option(entry: ConfigEntry, key: str, default: Any) -> Any:
     return entry.options.get(key, entry.data.get(key, default))
 
 
+def _coerce_int(value: Any, fallback: int) -> int:
+    try:
+        return max(0, int(value))
+    except (TypeError, ValueError):
+        return fallback
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: ConfigEntry,
@@ -42,7 +54,12 @@ async def async_setup_entry(
 
     data = hass.data[DOMAIN][entry.entry_id]
     entities: dict[str, CoverEntity] = {}
-    topic_prefix = _get_entry_option(entry, CONF_TOPIC_PREFIX, "rvc")
+    topic_prefix = _get_entry_option(entry, CONF_TOPIC_PREFIX, DEFAULT_TOPIC_PREFIX)
+    command_topic = _get_entry_option(entry, CONF_COMMAND_TOPIC, DEFAULT_COMMAND_TOPIC)
+    availability_timeout = _coerce_int(
+        _get_entry_option(entry, CONF_AVAILABILITY_TIMEOUT, DEFAULT_AVAILABILITY_TIMEOUT),
+        DEFAULT_AVAILABILITY_TIMEOUT,
+    )
 
     initial_entities = []
 
@@ -60,6 +77,8 @@ async def async_setup_entry(
             retract_instance=awning_config["retract"],
             stop_instance=awning_config["stop"],
             topic_prefix=topic_prefix,
+            command_topic=command_topic,
+            availability_timeout=availability_timeout,
         )
         entities[f"awning_{awning_id}"] = entity
         initial_entities.append(entity)
@@ -82,6 +101,8 @@ async def async_setup_entry(
             extend_instance=slide_config["extend"],
             retract_instance=slide_config["retract"],
             topic_prefix=topic_prefix,
+            command_topic=command_topic,
+            availability_timeout=availability_timeout,
         )
         entities[f"slide_{slide_id}"] = entity
         initial_entities.append(entity)
@@ -121,7 +142,7 @@ async def async_setup_entry(
     data["unsub_dispatchers"].append(unsub)
 
 
-class RVCAwning(CoverEntity):
+class RVCAwning(AvailabilityMixin, CoverEntity):
     """Representation of an RV-C awning cover."""
 
     def __init__(
@@ -132,7 +153,10 @@ class RVCAwning(CoverEntity):
         retract_instance: str,
         stop_instance: str,
         topic_prefix: str,
+        command_topic: str,
+        availability_timeout: int,
     ) -> None:
+        AvailabilityMixin.__init__(self, availability_timeout)
         self._attr_name = name
         self._attr_has_entity_name = False  # Use our name as-is
         self._awning_id = awning_id
@@ -140,6 +164,7 @@ class RVCAwning(CoverEntity):
         self._retract_instance = retract_instance
         self._stop_instance = stop_instance
         self._topic_prefix = topic_prefix
+        self._command_topic = command_topic
 
         # Cover attributes
         self._attr_device_class = CoverDeviceClass.AWNING
@@ -160,9 +185,7 @@ class RVCAwning(CoverEntity):
         self._attr_is_closed = True  # Default to retracted
         self._attr_is_closing = False
         self._attr_is_opening = False
-        self._attr_available = True
         self._attr_assumed_state = True  # Until MQTT confirms
-        self._last_update_time: float | None = None
 
         # Store instance numbers as extra state attributes
         self._attr_extra_state_attributes = {
@@ -185,11 +208,6 @@ class RVCAwning(CoverEntity):
         return f"rvc_awning_{self._awning_id}"
 
     @property
-    def available(self) -> bool:
-        """Return True if entity is available."""
-        return self._attr_available
-
-    @property
     def device_info(self) -> DeviceInfo:
         """Return device information to group entities."""
         return DeviceInfo(
@@ -199,11 +217,6 @@ class RVCAwning(CoverEntity):
             model="Awning Controller",
             via_device=(DOMAIN, "main_controller"),
         )
-
-    @property
-    def _command_topic(self) -> str:
-        # Node-RED format: single topic for all commands
-        return "node-red/rvc/commands"
 
     def handle_mqtt(self, instance: str, payload: dict[str, Any]) -> None:
         """Update internal state from an MQTT payload."""
@@ -221,7 +234,7 @@ class RVCAwning(CoverEntity):
             self._attr_assumed_state = False
 
         # Track last update time
-        self._last_update_time = time.time()
+        self.mark_seen_now()
 
         # Determine state from brightness/operating status
         if "operating status (brightness)" in payload:
@@ -348,7 +361,7 @@ class RVCAwning(CoverEntity):
         self.async_write_ha_state()
 
 
-class RVCSlide(CoverEntity):
+class RVCSlide(AvailabilityMixin, CoverEntity):
     """Representation of an RV-C slide cover.
 
     WARNING: Slides control heavy motors. Ensure the area is clear before operating!
@@ -361,13 +374,17 @@ class RVCSlide(CoverEntity):
         extend_instance: str,
         retract_instance: str,
         topic_prefix: str,
+        command_topic: str,
+        availability_timeout: int,
     ) -> None:
+        AvailabilityMixin.__init__(self, availability_timeout)
         self._attr_name = name
         self._attr_has_entity_name = False  # Use our name as-is
         self._slide_id = slide_id
         self._extend_instance = extend_instance
         self._retract_instance = retract_instance
         self._topic_prefix = topic_prefix
+        self._command_topic = command_topic
 
         # Cover attributes - slides are like shades (extend out/retract in)
         self._attr_device_class = CoverDeviceClass.SHADE
@@ -380,9 +397,7 @@ class RVCSlide(CoverEntity):
         self._attr_is_closed = True  # Default to retracted
         self._attr_is_closing = False
         self._attr_is_opening = False
-        self._attr_available = True
         self._attr_assumed_state = True  # Until MQTT confirms
-        self._last_update_time: float | None = None
 
         # Store instance numbers as extra state attributes
         self._attr_extra_state_attributes = {
@@ -405,11 +420,6 @@ class RVCSlide(CoverEntity):
         return f"rvc_slide_{self._slide_id}"
 
     @property
-    def available(self) -> bool:
-        """Return True if entity is available."""
-        return self._attr_available
-
-    @property
     def device_info(self) -> DeviceInfo:
         """Return device information to group entities."""
         return DeviceInfo(
@@ -419,11 +429,6 @@ class RVCSlide(CoverEntity):
             model="Slide Controller",
             via_device=(DOMAIN, "main_controller"),
         )
-
-    @property
-    def _command_topic(self) -> str:
-        # Node-RED format: single topic for all commands
-        return "node-red/rvc/commands"
 
     def handle_mqtt(self, instance: str, payload: dict[str, Any]) -> None:
         """Update internal state from an MQTT payload."""
@@ -441,7 +446,7 @@ class RVCSlide(CoverEntity):
             self._attr_assumed_state = False
 
         # Track last update time
-        self._last_update_time = time.time()
+        self.mark_seen_now()
 
         # Determine state from brightness/operating status
         if "operating status (brightness)" in payload:

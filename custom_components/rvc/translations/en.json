@@ -11,5 +11,20 @@
       }
     }
   },
+  "options": {
+    "step": {
+      "init": {
+        "title": "RV-C options",
+        "description": "Fine-tune MQTT topics and availability monitoring.",
+        "data": {
+          "topic_prefix": "MQTT topic prefix",
+          "auto_discovery": "Enable auto discovery",
+          "command_topic": "Command topic",
+          "gps_topic": "GPS topic",
+          "availability_timeout": "Availability timeout (seconds)"
+        }
+      }
+    }
+  },
   "title": "RV-C Integration"
 }

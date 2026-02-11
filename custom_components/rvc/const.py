@@ -7,6 +7,15 @@ DOMAIN = "rvc"
 
 CONF_TOPIC_PREFIX = "topic_prefix"
 CONF_AUTO_DISCOVERY = "auto_discovery"
+CONF_COMMAND_TOPIC = "command_topic"
+CONF_GPS_TOPIC = "gps_topic"
+CONF_AVAILABILITY_TIMEOUT = "availability_timeout"
+
+DEFAULT_TOPIC_PREFIX = "rvc"
+DEFAULT_AUTO_DISCOVERY = True
+DEFAULT_COMMAND_TOPIC = "node-red/rvc/commands"
+DEFAULT_GPS_TOPIC = "CP/#"
+DEFAULT_AVAILABILITY_TIMEOUT = 300  # seconds
 
 SIGNAL_DISCOVERY = "rvc_discovery_event"
 
@@ -17,6 +26,8 @@ PLATFORMS: list[Platform] = [
     Platform.LOCK,
     Platform.COVER,
     Platform.DEVICE_TRACKER,
+    Platform.SWITCH,
+    Platform.BUTTON,
 ]
 
 # Node-RED MQTT Command Format
@@ -120,10 +131,33 @@ DIMMER_INSTANCE_LABELS: dict[str, str] = {
 # Switch/relay instance labels (non-dimmable devices)
 SWITCH_INSTANCE_LABELS: dict[str, str] = {
     "13": "Satellite Dome",
-    # 14 and 17 are door lock controls (handled by lock platform)
-    "15": "Gen Stop",
     "16": "Water Pump",
-    "18": "Gen Start",
+}
+
+BUTTON_DEFINITIONS: dict[str, dict[str, str]] = {
+    "generator_start": {
+        "name": "Generator Start",
+        "instance": "18",
+        "command": "2",
+        "icon": "mdi:play-circle"
+    },
+    "generator_stop": {
+        "name": "Generator Stop",
+        "instance": "15",
+        "command": "2",
+        "icon": "mdi:stop-circle"
+    },
+}
+
+SWITCH_DEFINITIONS: dict[str, dict[str, str]] = {
+    "satellite_dome": {
+        "name": "Satellite Dome",
+        "instance": "13",
+    },
+    "water_pump": {
+        "name": "Water Pump",
+        "instance": "16",
+    },
 }
 
 # Lock definitions for door lock entities

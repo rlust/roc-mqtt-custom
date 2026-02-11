@@ -16,13 +16,29 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.restore_state import RestoreEntity
 
-from .const import CONF_TOPIC_PREFIX, DOMAIN, SIGNAL_DISCOVERY
+from .availability import AvailabilityMixin
+from .const import (
+    CONF_AVAILABILITY_TIMEOUT,
+    CONF_TOPIC_PREFIX,
+    DEFAULT_AVAILABILITY_TIMEOUT,
+    DEFAULT_TOPIC_PREFIX,
+    DOMAIN,
+    SIGNAL_DISCOVERY,
+)
 
 
 def _get_entry_option(entry: ConfigEntry, key: str, default: Any) -> Any:
     """Helper to read config values from options first, then data."""
     return entry.options.get(key, entry.data.get(key, default))
+
+
+def _coerce_int(value: Any, fallback: int) -> int:
+    try:
+        return max(0, int(value))
+    except (TypeError, ValueError):
+        return fallback
 
 
 async def async_setup_entry(
@@ -34,6 +50,10 @@ async def async_setup_entry(
 
     data = hass.data[DOMAIN][entry.entry_id]
     entities: dict[str, RVCClimate] = {}
+    availability_timeout = _coerce_int(
+        _get_entry_option(entry, CONF_AVAILABILITY_TIMEOUT, DEFAULT_AVAILABILITY_TIMEOUT),
+        DEFAULT_AVAILABILITY_TIMEOUT,
+    )
 
     async def _discovery_callback(discovery: dict[str, Any]) -> None:
         if discovery["type"] != "climate":
@@ -49,7 +69,8 @@ async def async_setup_entry(
             entity = RVCClimate(
                 name=name,
                 instance_id=inst_str,
-                topic_prefix=_get_entry_option(entry, CONF_TOPIC_PREFIX, "rvc"),
+                topic_prefix=_get_entry_option(entry, CONF_TOPIC_PREFIX, DEFAULT_TOPIC_PREFIX),
+                availability_timeout=availability_timeout,
             )
             entities[inst_str] = entity
             async_add_entities([entity])
@@ -60,13 +81,20 @@ async def async_setup_entry(
     data["unsub_dispatchers"].append(unsub)
 
 
-class RVCClimate(ClimateEntity):
+class RVCClimate(AvailabilityMixin, RestoreEntity, ClimateEntity):
     """Representation of an RV-C climate zone."""
 
     _attr_supported_features = ClimateEntityFeature.TARGET_TEMPERATURE
     _attr_hvac_modes = [HVACMode.OFF, HVACMode.COOL, HVACMode.HEAT, HVACMode.AUTO]
 
-    def __init__(self, name: str, instance_id: str, topic_prefix: str) -> None:
+    def __init__(
+        self,
+        name: str,
+        instance_id: str,
+        topic_prefix: str,
+        availability_timeout: int,
+    ) -> None:
+        AvailabilityMixin.__init__(self, availability_timeout)
         self._attr_name = name
         self._attr_has_entity_name = False  # Use our name as-is
         self._instance = instance_id
@@ -80,6 +108,7 @@ class RVCClimate(ClimateEntity):
         self._attr_extra_state_attributes = {
             "rvc_instance": instance_id,
             "rvc_topic_prefix": topic_prefix,
+            "availability_timeout": availability_timeout,
             "ac_output_level": None,
             "fan_speed_actual": None,
             "fan_mode": None,
@@ -87,6 +116,30 @@ class RVCClimate(ClimateEntity):
             "dead_band": None,
             "last_mqtt_update": None,
         }
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        last_state = await self.async_get_last_state()
+        if last_state is None:
+            return
+
+        state = last_state.state
+        for mode in self._attr_hvac_modes:
+            if mode.value == state:
+                self._attr_hvac_mode = mode
+                break
+
+        if (temp := last_state.attributes.get("temperature")) is not None:
+            try:
+                self._attr_target_temperature = float(temp)
+            except (TypeError, ValueError):
+                pass
+
+        if (curr := last_state.attributes.get("current_temperature")) is not None:
+            try:
+                self._attr_current_temperature = float(curr)
+            except (TypeError, ValueError):
+                pass
 
     @property
     def unique_id(self) -> str:
@@ -123,6 +176,7 @@ class RVCClimate(ClimateEntity):
 
     def handle_mqtt(self, payload: dict[str, Any]) -> None:
         """Update internal state from an MQTT payload."""
+        self.mark_seen_now()
         if "current_temperature" in payload:
             try:
                 self._attr_current_temperature = float(payload["current_temperature"])

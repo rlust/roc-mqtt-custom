@@ -7,7 +7,19 @@ from homeassistant import config_entries
 from homeassistant.core import callback
 import voluptuous as vol
 
-from .const import DOMAIN, CONF_TOPIC_PREFIX, CONF_AUTO_DISCOVERY
+from .const import (
+    CONF_AUTO_DISCOVERY,
+    CONF_AVAILABILITY_TIMEOUT,
+    CONF_COMMAND_TOPIC,
+    CONF_GPS_TOPIC,
+    CONF_TOPIC_PREFIX,
+    DEFAULT_AUTO_DISCOVERY,
+    DEFAULT_AVAILABILITY_TIMEOUT,
+    DEFAULT_COMMAND_TOPIC,
+    DEFAULT_GPS_TOPIC,
+    DEFAULT_TOPIC_PREFIX,
+    DOMAIN,
+)
 
 
 class RVCConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -24,8 +36,8 @@ class RVCConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         data_schema = vol.Schema(
             {
-                vol.Required(CONF_TOPIC_PREFIX, default="rvc"): str,
-                vol.Optional(CONF_AUTO_DISCOVERY, default=True): bool,
+                vol.Required(CONF_TOPIC_PREFIX, default=DEFAULT_TOPIC_PREFIX): str,
+                vol.Optional(CONF_AUTO_DISCOVERY, default=DEFAULT_AUTO_DISCOVERY): bool,
             }
         )
         return self.async_show_form(step_id="user", data_schema=data_schema)
@@ -54,12 +66,26 @@ class RVCOptionsFlow(config_entries.OptionsFlow):
             {
                 vol.Required(
                     CONF_TOPIC_PREFIX,
-                    default=_entry_value(CONF_TOPIC_PREFIX, "rvc"),
+                    default=_entry_value(CONF_TOPIC_PREFIX, DEFAULT_TOPIC_PREFIX),
                 ): str,
                 vol.Optional(
                     CONF_AUTO_DISCOVERY,
-                    default=_entry_value(CONF_AUTO_DISCOVERY, True),
+                    default=_entry_value(CONF_AUTO_DISCOVERY, DEFAULT_AUTO_DISCOVERY),
                 ): bool,
+                vol.Required(
+                    CONF_COMMAND_TOPIC,
+                    default=_entry_value(CONF_COMMAND_TOPIC, DEFAULT_COMMAND_TOPIC),
+                ): str,
+                vol.Required(
+                    CONF_GPS_TOPIC,
+                    default=_entry_value(CONF_GPS_TOPIC, DEFAULT_GPS_TOPIC),
+                ): str,
+                vol.Required(
+                    CONF_AVAILABILITY_TIMEOUT,
+                    default=_entry_value(
+                        CONF_AVAILABILITY_TIMEOUT, DEFAULT_AVAILABILITY_TIMEOUT
+                    ),
+                ): vol.All(vol.Coerce(int), vol.Range(min=0, max=86400)),
             }
         )
 

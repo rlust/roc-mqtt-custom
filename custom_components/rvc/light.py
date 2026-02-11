@@ -2,8 +2,9 @@
 from __future__ import annotations
 
 import logging
-import time
 from typing import Any
+
+import voluptuous as vol
 
 from homeassistant.components.light import (
     ATTR_BRIGHTNESS,
@@ -12,17 +13,25 @@ from homeassistant.components.light import (
 )
 from homeassistant.components import mqtt
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import STATE_OFF, STATE_ON
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_platform
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.restore_state import RestoreEntity
 
+from .availability import AvailabilityMixin
 from .const import (
+    CONF_AVAILABILITY_TIMEOUT,
+    CONF_COMMAND_TOPIC,
     CONF_TOPIC_PREFIX,
+    DEFAULT_AVAILABILITY_TIMEOUT,
+    DEFAULT_COMMAND_TOPIC,
+    DEFAULT_TOPIC_PREFIX,
     DOMAIN,
     SIGNAL_DISCOVERY,
     DIMMER_INSTANCE_LABELS,
-    SWITCH_INSTANCE_LABELS,
     DIMMABLE_LIGHTS,
     LIVING_AREA_LIGHTS,
     BEDROOM_AREA_LIGHTS,
@@ -33,12 +42,28 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 
-from typing import Any
-...
 
 def _get_entry_option(entry: ConfigEntry, key: str, default: Any) -> Any:
     """Helper to read config values from options first, then data."""
     return entry.options.get(key, entry.data.get(key, default))
+
+
+def _coerce_int(value: Any, fallback: int) -> int:
+    try:
+        return max(0, int(value))
+    except (TypeError, ValueError):
+        return fallback
+
+
+def _duration_schema(min_seconds: int = 1, max_seconds: int = 60) -> vol.Schema:
+    return vol.Schema(
+        {
+            vol.Required("duration"): vol.All(
+                vol.Coerce(int),
+                vol.Range(min=min_seconds, max=max_seconds),
+            )
+        }
+    )
 
 
 async def async_setup_entry(
@@ -50,17 +75,20 @@ async def async_setup_entry(
 
     data = hass.data[DOMAIN][entry.entry_id]
     entities: dict[str, RVCLight] = {}
-    topic_prefix = _get_entry_option(entry, CONF_TOPIC_PREFIX, "rvc")
+    topic_prefix = _get_entry_option(entry, CONF_TOPIC_PREFIX, DEFAULT_TOPIC_PREFIX)
+    command_topic = _get_entry_option(entry, CONF_COMMAND_TOPIC, DEFAULT_COMMAND_TOPIC)
+    availability_timeout = _coerce_int(
+        _get_entry_option(entry, CONF_AVAILABILITY_TIMEOUT, DEFAULT_AVAILABILITY_TIMEOUT),
+        DEFAULT_AVAILABILITY_TIMEOUT,
+    )
 
     # Pre-create all mapped light entities from const.py mappings
     # They will start as "unavailable" and become available when MQTT messages arrive
-    all_light_instances = {**DIMMER_INSTANCE_LABELS, **SWITCH_INSTANCE_LABELS}
+    all_light_instances = dict(DIMMER_INSTANCE_LABELS)
 
     _LOGGER.info(
-        "Pre-creating %d light entities from mappings (dimmers: %d, switches: %d)",
+        "Pre-creating %d dimmer light entities from mappings",
         len(all_light_instances),
-        len(DIMMER_INSTANCE_LABELS),
-        len(SWITCH_INSTANCE_LABELS),
     )
 
     initial_entities = []
@@ -69,6 +97,8 @@ async def async_setup_entry(
             name=name,
             instance_id=inst_str,
             topic_prefix=topic_prefix,
+            command_topic=command_topic,
+            availability_timeout=availability_timeout,
         )
         entities[inst_str] = entity
         initial_entities.append(entity)
@@ -99,6 +129,8 @@ async def async_setup_entry(
                 name=name,
                 instance_id=inst_str,
                 topic_prefix=topic_prefix,
+                command_topic=command_topic,
+                availability_timeout=availability_timeout,
             )
             entities[inst_str] = entity
             async_add_entities([entity])
@@ -109,23 +141,34 @@ async def async_setup_entry(
     unsub = async_dispatcher_connect(hass, SIGNAL_DISCOVERY, _discovery_callback)
     data["unsub_dispatchers"].append(unsub)
 
+    platform = entity_platform.async_get_current_platform()
+    duration_schema = _duration_schema()
+    platform.async_register_entity_service("ramp_up", duration_schema, "async_ramp_up")
+    platform.async_register_entity_service("ramp_down", duration_schema, "async_ramp_down")
 
-class RVCLight(LightEntity):
+
+class RVCLight(AvailabilityMixin, RestoreEntity, LightEntity):
     """Representation of an RV-C dimmer light (dimmable or relay-only)."""
 
-    def __init__(self, name: str, instance_id: str, topic_prefix: str) -> None:
+    def __init__(
+        self,
+        name: str,
+        instance_id: str,
+        topic_prefix: str,
+        command_topic: str,
+        availability_timeout: int,
+    ) -> None:
+        AvailabilityMixin.__init__(self, availability_timeout)
         self._attr_name = name
         self._attr_has_entity_name = False  # Use our name as-is, not combined with device name
         self._instance = instance_id
         self._topic_prefix = topic_prefix
+        self._command_topic = command_topic
         self._attr_is_on = False
         self._attr_brightness = 255
 
-        # Availability and state tracking
-        # Entities start as "available" but with "assumed_state" until MQTT confirms
-        self._attr_available = True  # Allow immediate control
+        # Entities start with assumed state until MQTT confirms
         self._attr_assumed_state = True  # Show dashed circle until MQTT arrives
-        self._last_update_time: float | None = None
 
         # Determine if this is a dimmable light or relay-only
         self._is_dimmable = instance_id in DIMMABLE_LIGHTS
@@ -143,6 +186,8 @@ class RVCLight(LightEntity):
             "rvc_instance": instance_id,
             "rvc_type": "dimmable" if self._is_dimmable else "relay",
             "rvc_topic_prefix": topic_prefix,
+            "command_topic": command_topic,
+            "availability_timeout": availability_timeout,
             "last_command": None,
             "load_status": None,
             "enable_status": None,
@@ -156,18 +201,27 @@ class RVCLight(LightEntity):
             name, instance_id, self._is_dimmable
         )
 
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        last_state = await self.async_get_last_state()
+        if last_state is None:
+            return
+
+        if last_state.state in (STATE_ON, STATE_OFF):
+            self._attr_is_on = last_state.state == STATE_ON
+
+        restored_brightness = last_state.attributes.get(ATTR_BRIGHTNESS)
+        if restored_brightness is not None:
+            try:
+                self._attr_brightness = int(restored_brightness)
+            except (TypeError, ValueError):
+                pass
+
     @property
     def unique_id(self) -> str:
         return f"rvc_light_{self._instance}"
 
-    @property
-    def available(self) -> bool:
-        """Return True if entity is available.
-
-        Entities are always available for control, but use assumed_state
-        to indicate uncertainty until first MQTT status message arrives.
-        """
-        return self._attr_available
+    # Availability handled by AvailabilityMixin
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -229,10 +283,7 @@ class RVCLight(LightEntity):
         else:
             return "mdi:lightbulb"
 
-    @property
-    def _command_topic(self) -> str:
-        # Node-RED format: single topic for all light commands
-        return "node-red/rvc/commands"
+    # Command topic set per entity from config options
 
     def handle_mqtt(self, payload: dict[str, Any]) -> None:
         """Update internal state from an MQTT payload.
@@ -256,7 +307,7 @@ class RVCLight(LightEntity):
             self._attr_assumed_state = False
 
         # Track last update time for availability monitoring
-        self._last_update_time = time.time()
+        self.mark_seen_now()
 
         # Raw RV-C dimmer payload: "operating status (brightness)" 0–100
         if "operating status (brightness)" in payload:
@@ -389,3 +440,32 @@ class RVCLight(LightEntity):
         )
 
         self.async_write_ha_state()
+
+    async def async_ramp_up(self, duration: int) -> None:
+        """Ramp the light up over the requested duration."""
+        await self._async_send_ramp_command(duration, 19)
+
+    async def async_ramp_down(self, duration: int) -> None:
+        """Ramp the light down over the requested duration."""
+        await self._async_send_ramp_command(duration, 20)
+
+    async def _async_send_ramp_command(self, duration: int, command: int) -> None:
+        duration_int = max(1, min(60, int(duration)))
+        instance = int(self._instance)
+        payload = f"{instance} {command} {duration_int}"
+        _LOGGER.info(
+            "Light %s (%s) ramp command %s for %ss: publishing to %s: '%s'",
+            self._instance,
+            self._attr_name,
+            command,
+            duration_int,
+            self._command_topic,
+            payload,
+        )
+        await mqtt.async_publish(
+            self.hass,
+            self._command_topic,
+            payload,
+            qos=0,
+            retain=False,
+        )

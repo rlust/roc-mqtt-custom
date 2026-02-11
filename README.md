@@ -9,12 +9,15 @@ Custom Home Assistant integration to monitor and control RV-C devices via MQTT.
   - \`rvc/status/climate/<instance>\`
   - \`rvc/status/sensor/<instance>\`
 - Dynamic creation of:
-  - Lights (dimmers) with brightness
+  - Lights (dimmers) with brightness + ramp services
   - Climate entities
   - Sensors
-- UI-based configuration (config flow)
-- Command topic pattern for bridge / CAN gateway:
-  - \`rvc/command/light/<instance>\`
+  - Relay switches (satellite dome, water pump, etc.)
+  - Generator control buttons (start/stop)
+- UI-based configuration (config flow + options flow)
+- Built-in availability monitoring for every platform
+- Command topic pattern for bridge / CAN gateway (default `node-red/rvc/commands`):
+  - `rvc/command/light/<instance>`
 
 ## MQTT Topic Format
 
@@ -55,6 +58,17 @@ rvc/command/light/<instance>
 \`\`\`
 
 The bridge is responsible for translating these JSON commands into the actual CAN frames (e.g. \`cansend can0 ...\`).
+
+
+## Configuration Options
+
+Use the integration options flow (Settings → Devices & Services → RV-C → Configure) to adjust runtime behavior without editing YAML:
+
+- **MQTT topic prefix** – Root of the RV-C status tree (default `rvc`).
+- **Auto discovery** – Toggle automatic entity creation from incoming topics.
+- **Command topic** – Where control payloads are published (default `node-red/rvc/commands`).
+- **GPS topic** – Topic filter for CP/GPSDATA messages (default `CP/#`).
+- **Availability timeout** – Seconds before entities are marked unavailable when no telemetry is received (default 300s).
 
 ## Installation
 
