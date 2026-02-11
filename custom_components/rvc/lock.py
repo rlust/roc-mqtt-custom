@@ -4,6 +4,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from homeassistant.helpers.event import async_call_later
+
 from homeassistant.components.lock import LockEntity
 from homeassistant.components import mqtt
 from homeassistant.config_entries import ConfigEntry
@@ -139,11 +141,16 @@ class RVCLock(AvailabilityMixin, LockEntity):
             "load_status": None,
             "last_mqtt_update": None,
         }
+        self._state_reset_unsub = None
 
         _LOGGER.info(
             "Initialized RVCLock: name='%s', lock=%s, unlock=%s",
             name, lock_instance, unlock_instance
         )
+
+    async def async_will_remove_from_hass(self) -> None:
+        self._cancel_state_reset()
+        await super().async_will_remove_from_hass()
 
     @property
     def unique_id(self) -> str:
@@ -160,12 +167,30 @@ class RVCLock(AvailabilityMixin, LockEntity):
             via_device=(DOMAIN, "main_controller"),
         )
 
+    def _cancel_state_reset(self) -> None:
+        if self._state_reset_unsub:
+            self._state_reset_unsub()
+            self._state_reset_unsub = None
+
+    def _schedule_state_reset(self) -> None:
+        self._cancel_state_reset()
+
+        def _reset(_):
+            self._state_reset_unsub = None
+            self._attr_is_locked = None
+            self._attr_assumed_state = True
+            self.async_write_ha_state()
+
+        self._state_reset_unsub = async_call_later(self.hass, 2, _reset)
+
     def handle_mqtt(self, instance: str, payload: dict[str, Any]) -> None:
         """Update internal state from an MQTT payload."""
         _LOGGER.debug(
             "Lock %s received MQTT payload for instance %s: %s",
             self._lock_id, instance, payload
         )
+
+        self._cancel_state_reset()
 
         # Disable assumed_state on first MQTT message
         if self._attr_assumed_state:
@@ -207,15 +232,13 @@ class RVCLock(AvailabilityMixin, LockEntity):
         self.async_write_ha_state()
 
     async def async_lock(self, **kwargs: Any) -> None:
-        """Lock the door."""
+        """Lock the door (momentary command)."""
         self._attr_is_locked = True
+        self._attr_assumed_state = True
+        self.async_write_ha_state()
 
-        # Node-RED format: "instance command brightness"
-        # Fire lock instance with command 2 (ON) - momentary trigger
         instance = int(self._lock_instance)
-        command = 2
-        brightness = 100
-        payload = f"{instance} {command} {brightness}"
+        payload = f"{instance} 2 100"
 
         _LOGGER.debug(
             "Lock %s locking: publishing to %s: '%s'",
@@ -230,18 +253,16 @@ class RVCLock(AvailabilityMixin, LockEntity):
             retain=False,
         )
 
-        self.async_write_ha_state()
+        self._schedule_state_reset()
 
     async def async_unlock(self, **kwargs: Any) -> None:
-        """Unlock the door."""
+        """Unlock the door (momentary command)."""
         self._attr_is_locked = False
+        self._attr_assumed_state = True
+        self.async_write_ha_state()
 
-        # Node-RED format: "instance command brightness"
-        # Fire unlock instance with command 2 (ON) - momentary trigger
         instance = int(self._unlock_instance)
-        command = 2
-        brightness = 100
-        payload = f"{instance} {command} {brightness}"
+        payload = f"{instance} 2 100"
 
         _LOGGER.debug(
             "Lock %s unlocking: publishing to %s: '%s'",
@@ -256,4 +277,4 @@ class RVCLock(AvailabilityMixin, LockEntity):
             retain=False,
         )
 
-        self.async_write_ha_state()
+        self._schedule_state_reset()
