@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from typing import Any
 
 from homeassistant.components.cover import (
@@ -88,6 +89,12 @@ async def _publish_cover_command(
             "command definition": _COMMAND_DEFINITIONS.get(command, f"code {command}"),
             "desired level": brightness,
             "delay/duration": 255,
+            "group": "11111111",
+            "interlock": "00",
+            "interlock definition": "no interlock active",
+            "dgn": "1FEDB",
+            "timestamp": f"{time.time():.6f}",
+            "payload": payload,
         }
         _LOGGER.debug(
             "Cover %s publishing direct RV-C payload to %s: %s",
@@ -279,6 +286,13 @@ class RVCAwning(AvailabilityMixin, CoverEntity):
 
     def handle_mqtt(self, instance: str, payload: dict[str, Any]) -> None:
         """Update internal state from an MQTT payload."""
+        if self.hass is None:
+            _LOGGER.debug(
+                "Awning %s received MQTT payload before HA attached; skipping",
+                self._awning_id,
+            )
+            return
+
         _LOGGER.debug(
             "Awning %s received MQTT payload for instance %s: %s",
             self._awning_id, instance, payload
@@ -474,6 +488,13 @@ class RVCSlide(AvailabilityMixin, CoverEntity):
 
     def handle_mqtt(self, instance: str, payload: dict[str, Any]) -> None:
         """Update internal state from an MQTT payload."""
+        if self.hass is None:
+            _LOGGER.debug(
+                "Slide %s received MQTT payload before HA attached; skipping",
+                self._slide_id,
+            )
+            return
+
         _LOGGER.debug(
             "Slide %s received MQTT payload for instance %s: %s",
             self._slide_id, instance, payload
