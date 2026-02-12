@@ -9,6 +9,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.event import async_call_later
 
 from .const import (
     CONF_COMMAND_TOPIC,
@@ -126,14 +127,34 @@ class RVCButton(ButtonEntity):
 
     async def async_press(self) -> None:
         instance = int(self._instance)
-        payload = f"{instance} {self._command} 100"
+        payload_on = f"{instance} {self._command} 100"
         _LOGGER.info(
-            "Button %s (%s) publishing command '%s'", self.entity_id, self._attr_name, payload
+            "Button %s (%s) publishing command '%s'", self.entity_id, self._attr_name, payload_on
         )
         await mqtt.async_publish(
             self.hass,
             self._command_topic,
-            payload,
+            payload_on,
             qos=0,
             retain=False,
         )
+
+        if self._command == 2:
+            payload_off = f"{instance} 3 0"
+
+            async def _send_off(_):
+                _LOGGER.debug(
+                    "Button %s (%s) sending follow-up OFF '%s'",
+                    self.entity_id,
+                    self._attr_name,
+                    payload_off,
+                )
+                await mqtt.async_publish(
+                    self.hass,
+                    self._command_topic,
+                    payload_off,
+                    qos=0,
+                    retain=False,
+                )
+
+            async_call_later(self.hass, 1, _send_off)
