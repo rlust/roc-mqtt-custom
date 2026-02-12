@@ -1,6 +1,7 @@
 """Platform for RV-C awning and slide covers using Node-RED MQTT format."""
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any
 
@@ -32,6 +33,14 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
+_COMMAND_DEFINITIONS = {
+    2: "on delay",
+    3: "off",
+    5: "toggle",
+    19: "ramp up",
+    20: "ramp down",
+}
+
 
 def _get_entry_option(entry: ConfigEntry, key: str, default: Any) -> Any:
     """Helper to read config values from options first, then data."""
@@ -43,6 +52,56 @@ def _coerce_int(value: Any, fallback: int) -> int:
         return max(0, int(value))
     except (TypeError, ValueError):
         return fallback
+
+
+async def _publish_cover_command(
+    hass: HomeAssistant,
+    label: str,
+    command_topic: str,
+    topic_prefix: str,
+    instance: str,
+    command: int,
+    brightness: int,
+) -> None:
+    """Publish cover control to both Node-RED and direct RV-C topics."""
+    payload = f"{instance} {command} {brightness}"
+    _LOGGER.debug(
+        "Cover %s publishing Node-RED payload to %s: '%s'",
+        label,
+        command_topic,
+        payload,
+    )
+    await mqtt.async_publish(
+        hass,
+        command_topic,
+        payload,
+        qos=0,
+        retain=False,
+    )
+
+    if topic_prefix:
+        direct_topic = f"{topic_prefix}/DC_DIMMER_COMMAND_2/{instance}"
+        direct_payload = {
+            "name": "DC_DIMMER_COMMAND_2",
+            "instance": int(instance),
+            "command": command,
+            "command definition": _COMMAND_DEFINITIONS.get(command, f"code {command}"),
+            "desired level": brightness,
+            "delay/duration": 255,
+        }
+        _LOGGER.debug(
+            "Cover %s publishing direct RV-C payload to %s: %s",
+            label,
+            direct_topic,
+            direct_payload,
+        )
+        await mqtt.async_publish(
+            hass,
+            direct_topic,
+            json.dumps(direct_payload),
+            qos=0,
+            retain=False,
+        )
 
 
 async def async_setup_entry(
@@ -276,24 +335,19 @@ class RVCAwning(AvailabilityMixin, CoverEntity):
         self._attr_is_closing = False
         self._attr_is_closed = False
 
-        # Node-RED format: "instance command brightness"
-        # Command 2 = Turn ON (extend)
-        instance = int(self._extend_instance)
+        # Node-RED format uses string payloads; also publish direct RV-C JSON.
+        instance = self._extend_instance
         command = 2
         brightness = 100
-        payload = f"{instance} {command} {brightness}"
 
-        _LOGGER.debug(
-            "Awning %s extending: publishing to %s: '%s'",
-            self._awning_id, self._command_topic, payload
-        )
-
-        await mqtt.async_publish(
+        await _publish_cover_command(
             self.hass,
+            f"awning:{self._awning_id}:extend",
             self._command_topic,
-            payload,
-            qos=0,
-            retain=False,
+            self._topic_prefix,
+            instance,
+            command,
+            brightness,
         )
 
         self.async_write_ha_state()
@@ -303,24 +357,18 @@ class RVCAwning(AvailabilityMixin, CoverEntity):
         self._attr_is_closing = True
         self._attr_is_opening = False
 
-        # Node-RED format: "instance command brightness"
-        # Command 2 = Turn ON (retract)
-        instance = int(self._retract_instance)
+        instance = self._retract_instance
         command = 2
         brightness = 100
-        payload = f"{instance} {command} {brightness}"
 
-        _LOGGER.debug(
-            "Awning %s retracting: publishing to %s: '%s'",
-            self._awning_id, self._command_topic, payload
-        )
-
-        await mqtt.async_publish(
+        await _publish_cover_command(
             self.hass,
+            f"awning:{self._awning_id}:retract",
             self._command_topic,
-            payload,
-            qos=0,
-            retain=False,
+            self._topic_prefix,
+            instance,
+            command,
+            brightness,
         )
 
         self.async_write_ha_state()
@@ -338,24 +386,18 @@ class RVCAwning(AvailabilityMixin, CoverEntity):
         self._attr_is_opening = False
         self._attr_is_closing = False
 
-        # Node-RED format: "instance command brightness"
-        # Command 2 = Turn ON (stop - momentary)
-        instance = int(self._stop_instance)
+        instance = self._stop_instance
         command = 2
         brightness = 100
-        payload = f"{instance} {command} {brightness}"
 
-        _LOGGER.debug(
-            "Awning %s stopping: publishing to %s: '%s'",
-            self._awning_id, self._command_topic, payload
-        )
-
-        await mqtt.async_publish(
+        await _publish_cover_command(
             self.hass,
+            f"awning:{self._awning_id}:stop",
             self._command_topic,
-            payload,
-            qos=0,
-            retain=False,
+            self._topic_prefix,
+            instance,
+            command,
+            brightness,
         )
 
         self.async_write_ha_state()
@@ -497,24 +539,18 @@ class RVCSlide(AvailabilityMixin, CoverEntity):
         self._attr_is_closing = False
         self._attr_is_closed = False
 
-        # Node-RED format: "instance command brightness"
-        # Command 2 = Turn ON (extend)
-        instance = int(self._extend_instance)
+        instance = self._extend_instance
         command = 2
         brightness = 100
-        payload = f"{instance} {command} {brightness}"
 
-        _LOGGER.info(
-            "Slide %s extending: publishing to %s: '%s'",
-            self._slide_id, self._command_topic, payload
-        )
-
-        await mqtt.async_publish(
+        await _publish_cover_command(
             self.hass,
+            f"slide:{self._slide_id}:extend",
             self._command_topic,
-            payload,
-            qos=0,
-            retain=False,
+            self._topic_prefix,
+            instance,
+            command,
+            brightness,
         )
 
         self.async_write_ha_state()
@@ -533,24 +569,18 @@ class RVCSlide(AvailabilityMixin, CoverEntity):
         self._attr_is_closing = True
         self._attr_is_opening = False
 
-        # Node-RED format: "instance command brightness"
-        # Command 2 = Turn ON (retract)
-        instance = int(self._retract_instance)
+        instance = self._retract_instance
         command = 2
         brightness = 100
-        payload = f"{instance} {command} {brightness}"
 
-        _LOGGER.info(
-            "Slide %s retracting: publishing to %s: '%s'",
-            self._slide_id, self._command_topic, payload
-        )
-
-        await mqtt.async_publish(
+        await _publish_cover_command(
             self.hass,
+            f"slide:{self._slide_id}:retract",
             self._command_topic,
-            payload,
-            qos=0,
-            retain=False,
+            self._topic_prefix,
+            instance,
+            command,
+            brightness,
         )
 
         self.async_write_ha_state()
