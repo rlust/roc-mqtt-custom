@@ -25,7 +25,7 @@ from .const import (
 class RVCConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Config flow for the RVC integration."""
 
-    VERSION = 1
+    VERSION = 2
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None):
         """Handle the initial step."""

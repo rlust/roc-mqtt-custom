@@ -21,7 +21,7 @@ from .const import (
     CONF_AVAILABILITY_TIMEOUT,
     CONF_COMMAND_TOPIC,
     CONF_TOPIC_PREFIX,
-    DEFAULT_AVAILABILITY_TIMEOUT,
+    DEFAULT_COVER_AVAILABILITY_TIMEOUT,
     DEFAULT_COMMAND_TOPIC,
     DEFAULT_TOPIC_PREFIX,
     DOMAIN,
@@ -57,8 +57,8 @@ async def async_setup_entry(
     topic_prefix = _get_entry_option(entry, CONF_TOPIC_PREFIX, DEFAULT_TOPIC_PREFIX)
     command_topic = _get_entry_option(entry, CONF_COMMAND_TOPIC, DEFAULT_COMMAND_TOPIC)
     availability_timeout = _coerce_int(
-        _get_entry_option(entry, CONF_AVAILABILITY_TIMEOUT, DEFAULT_AVAILABILITY_TIMEOUT),
-        DEFAULT_AVAILABILITY_TIMEOUT,
+        _get_entry_option(entry, CONF_AVAILABILITY_TIMEOUT, DEFAULT_COVER_AVAILABILITY_TIMEOUT),
+        DEFAULT_COVER_AVAILABILITY_TIMEOUT,
     )
 
     initial_entities = []
