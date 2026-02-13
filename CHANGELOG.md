@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.2.0 - 2026-02-13
+
+- Cut a standalone release for the refactored architecture so downstream installs can adopt the new flow without waiting for additional changes.
+- Bumped the integration manifest to 2.2.0 to match the new release tag and HACS metadata requirements.
+- Documented the architectural highlights (momentary lock buttons, dedicated switch/generator entities, availability mixin, restored climate/light state, config-entry options) as part of this release.
+
 ## 2.1.2 - 2026-02-11
 
 - Added dedicated door-lock buttons (Lock + Unlock) so each RV-C command is exposed separately.
