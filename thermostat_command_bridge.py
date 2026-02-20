@@ -65,7 +65,7 @@ class ThermostatBridge:
         self.mqtt.on_message = self.on_message
 
         self.can_bus = None
-        if self.tx_enabled and not args.dry_run:
+        if self.tx_enabled and not args.dry_run and not args.handoff:
             self.can_bus = self._setup_can_bus()
 
     @staticmethod
@@ -101,7 +101,7 @@ class ThermostatBridge:
         print(f"✅ MQTT connected; subscribed to {topic}")
         print(
             f"🔒 TX enabled={self.tx_enabled} dry_run={self.args.dry_run} "
-            f"min_interval={self.min_interval_s}s"
+            f"handoff={self.args.handoff} min_interval={self.min_interval_s}s"
         )
 
     def on_message(self, client, _userdata, msg):
@@ -133,8 +133,8 @@ class ThermostatBridge:
             self.publish_ack("monitor_only", topic, payload, frame)
             return
 
-        sent = self.send_can(frame)
-        self.publish_ack("sent" if sent else "logged_only", topic, payload, frame)
+        sent, status = self.send_frame(frame)
+        self.publish_ack(status if sent else status, topic, payload, frame)
 
     @staticmethod
     def parse_instance(topic: str) -> Tuple[bool, int | str]:
@@ -237,20 +237,48 @@ class ThermostatBridge:
             "setpoint_cool_c100": cool_c100,
         }
 
-    def send_can(self, frame: dict) -> bool:
+    def send_frame(self, frame: dict) -> tuple[bool, str]:
         self.last_sent_by_instance[frame["instance"]] = time.time()
+
+        # Optional handoff mode: publish prebuilt thermostat command into existing MQTT/CAN path
+        if self.args.handoff:
+            ok = self.publish_handoff(frame)
+            return (ok, "handoff_published" if ok else "handoff_failed")
+
         if self.args.dry_run or self.can_bus is None:
             print(f"🧪 DRY/LOG TX CAN1 {frame['pgn_hex']} data={frame['data_hex']}")
-            return False
+            return (False, "logged_only")
 
         try:
             arbitration_id = frame["pgn"]
             msg = can.Message(arbitration_id=arbitration_id, data=frame["data"], is_extended_id=True)
             self.can_bus.send(msg)
             print(f"✅ CAN1 TX {frame['pgn_hex']} data={frame['data_hex']}")
-            return True
+            return (True, "sent")
         except Exception as e:
             print(f"❌ CAN send failed: {e}")
+            return (False, "logged_only")
+
+    def publish_handoff(self, frame: dict) -> bool:
+        topic = self.args.handoff_topic.format(instance=frame["instance"])
+        payload = {
+            "name": "THERMOSTAT_COMMAND_1",
+            "instance": frame["instance"],
+            "dgn": frame["pgn_hex"].replace("0x", ""),
+            "data": frame["data_hex"],
+            "mode": frame["mode"],
+            "fan mode": frame["fan_mode"],
+            "fan speed": frame["fan_speed"],
+            "setpoint temp heat": frame["setpoint_heat_c100"] / 100.0,
+            "setpoint temp cool": frame["setpoint_cool_c100"] / 100.0,
+            "timestamp": f"{time.time():.6f}",
+        }
+        try:
+            self.mqtt.publish(topic, json.dumps(payload), qos=0, retain=False)
+            print(f"🔁 HANDOFF MQTT {topic} data={frame['data_hex']}")
+            return True
+        except Exception as e:
+            print(f"❌ Handoff publish failed: {e}")
             return False
 
     def publish_ack(self, status: str, topic: str, payload: dict, frame: dict):
@@ -307,6 +335,10 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--can-interface", default="socketcan")
     p.add_argument("--can-channel", default="can0")
     p.add_argument("--can-bitrate", type=int, default=250000)
+
+    # Handoff mode publishes to existing MQTT->CAN pipeline instead of direct python-can TX.
+    p.add_argument("--handoff", action="store_true", help="Publish thermostat commands to existing MQTT/CAN handoff topic")
+    p.add_argument("--handoff-topic", default="RVC/THERMOSTAT_COMMAND_1/{instance}", help="Handoff topic template; supports {instance}")
     return p.parse_args()
 
 
