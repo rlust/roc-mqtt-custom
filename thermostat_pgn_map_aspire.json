@@ -1,0 +1,74 @@
+{
+  "profile": "entegra_aspire",
+  "source": "can bus data.yml",
+  "updated": "2026-02-20",
+  "pgns": {
+    "thermostat_status_1": {
+      "name": "THERMOSTAT_STATUS_1",
+      "hex": "0x1FFE2",
+      "dec": 131042,
+      "direction": ["rx", "tx"],
+      "description": "Primary thermostat status and command PGN (mode/fan/setpoints)",
+      "fields": {
+        "byte0": "instance",
+        "byte1_bits_0_3": "mode",
+        "byte1_bits_4_5": "fan_mode",
+        "byte1_bits_6_7": "schedule_mode",
+        "byte2": "fan_speed_percent",
+        "byte3_4": "setpoint_heat_c_x100_le",
+        "byte5_6": "setpoint_cool_c_x100_le",
+        "byte7": "reserved"
+      },
+      "enums": {
+        "mode": {
+          "0": "off",
+          "1": "cool",
+          "2": "heat",
+          "3": "auto",
+          "4": "fan_only"
+        },
+        "fan_mode": {
+          "0": "auto",
+          "1": "on"
+        },
+        "schedule_mode": {
+          "0": "disabled",
+          "1": "enabled"
+        }
+      }
+    },
+    "thermostat_command_2": {
+      "name": "THERMOSTAT_COMMAND_2",
+      "hex": "0x1FEF8",
+      "dec": 130808,
+      "direction": ["tx"],
+      "description": "Schedule instance switching"
+    },
+    "thermostat_status_2": {
+      "name": "THERMOSTAT_STATUS_2",
+      "hex": "0x1FEFA",
+      "dec": 130810,
+      "direction": ["rx"],
+      "description": "Extended thermostat status"
+    },
+    "thermostat_ambient_status": {
+      "name": "THERMOSTAT_AMBIENT_STATUS",
+      "hex": "0x1FF9C",
+      "dec": 130972,
+      "direction": ["rx"],
+      "description": "Ambient temperature per zone"
+    }
+  },
+  "default_topics": {
+    "control": "rvcbridge/thermostat_control/+",
+    "ack": "rvcbridge/thermostat_control/ack",
+    "nack": "rvcbridge/thermostat_control/nack",
+    "audit": "rvcbridge/audit/thermostat_control"
+  },
+  "safety": {
+    "monitor_only_default": true,
+    "tx_requires_enable": true,
+    "allowed_instances": [0, 1, 2, 3, 4, 5, 6],
+    "allowed_pgns_hex": ["0x1FFE2", "0x1FEF8"]
+  }
+}
