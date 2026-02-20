@@ -56,7 +56,9 @@ class ThermostatBridge:
         self.min_interval_s = args.min_interval
         self.tx_enabled = bool(args.tx_enable)
 
-        self.pgn = int(self.profile["pgns"]["thermostat_status_1"]["hex"], 16)
+        # TX should use THERMOSTAT_COMMAND_1 (0x1FEF9). Status PGN 0x1FFE2 is RX.
+        tx_key = "thermostat_command_1" if "thermostat_command_1" in self.profile.get("pgns", {}) else "thermostat_status_1"
+        self.pgn = int(self.profile["pgns"][tx_key]["hex"], 16)
 
         self.mqtt = mqtt.Client(client_id="rvc_thermostat_bridge")
         if args.username and args.password:

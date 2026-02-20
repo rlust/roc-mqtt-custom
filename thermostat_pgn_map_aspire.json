@@ -7,8 +7,8 @@
       "name": "THERMOSTAT_STATUS_1",
       "hex": "0x1FFE2",
       "dec": 131042,
-      "direction": ["rx", "tx"],
-      "description": "Primary thermostat status and command PGN (mode/fan/setpoints)",
+      "direction": ["rx"],
+      "description": "Primary thermostat status PGN (mode/fan/setpoints)",
       "fields": {
         "byte0": "instance",
         "byte1_bits_0_3": "mode",
@@ -36,6 +36,13 @@
           "1": "enabled"
         }
       }
+    },
+    "thermostat_command_1": {
+      "name": "THERMOSTAT_COMMAND_1",
+      "hex": "0x1FEF9",
+      "dec": 130809,
+      "direction": ["tx"],
+      "description": "Primary thermostat command PGN"
     },
     "thermostat_command_2": {
       "name": "THERMOSTAT_COMMAND_2",
@@ -69,6 +76,6 @@
     "monitor_only_default": true,
     "tx_requires_enable": true,
     "allowed_instances": [0, 1, 2, 3, 4, 5, 6],
-    "allowed_pgns_hex": ["0x1FFE2", "0x1FEF8"]
+    "allowed_pgns_hex": ["0x1FEF9", "0x1FEF8"]
   }
 }
