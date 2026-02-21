@@ -77,20 +77,41 @@ async def async_setup_entry(
         if discovery["type"] != "climate":
             return
 
-        instance = discovery["instance"]
         payload = discovery["payload"]
-        inst_str = str(instance)
-        name = payload.get("name") or f"RVC Climate {inst_str}"
+        raw_name = str(payload.get("name", "") or "")
 
-        entity = entities.get(inst_str)
+        # Canonical zone mapping based on learned Aspire behavior:
+        # - THERMOSTAT_STATUS_1 instances 0/1/2 => Front/Mid/Rear
+        # - AIR_CONDITIONER_STATUS instances 1/2/3 map to thermostat 0/1/2
+        mapped_instance: str | None = None
+        try:
+            raw_instance = int(discovery["instance"])
+        except (TypeError, ValueError):
+            return
+
+        if raw_name.startswith("THERMOSTAT_STATUS_1") or raw_name.startswith("THERMOSTAT_COMMAND_1"):
+            if raw_instance in (0, 1, 2):
+                mapped_instance = str(raw_instance)
+        elif raw_name.startswith("AIR_CONDITIONER_STATUS") or raw_name.startswith("AIR_CONDITIONER_COMMAND"):
+            if raw_instance in (1, 2, 3):
+                mapped_instance = str(raw_instance - 1)
+
+        if mapped_instance is None:
+            # Ignore non-zone climate-like instances (ex: 81) to avoid bogus entities.
+            return
+
+        zone_names = {"0": "AC Front", "1": "AC Mid", "2": "AC Rear"}
+        name = zone_names.get(mapped_instance, f"RVC Climate {mapped_instance}")
+
+        entity = entities.get(mapped_instance)
         if entity is None:
             entity = RVCClimate(
                 name=name,
-                instance_id=inst_str,
+                instance_id=mapped_instance,
                 topic_prefix=_get_entry_option(entry, CONF_TOPIC_PREFIX, DEFAULT_TOPIC_PREFIX),
                 availability_timeout=availability_timeout,
             )
-            entities[inst_str] = entity
+            entities[mapped_instance] = entity
             async_add_entities([entity])
 
         entity.handle_mqtt(payload)

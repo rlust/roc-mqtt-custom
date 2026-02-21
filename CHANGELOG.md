@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.3.3 - 2026-02-21
+
+- Fixed climate entity zone mapping to ignore non-zone climate-like instances and prevent bogus entities (e.g., instance 81).
+- Added canonical climate zone mapping in discovery:
+  - `THERMOSTAT_STATUS_1/0|1|2` => Front/Mid/Rear
+  - `AIR_CONDITIONER_STATUS/1|2|3` => Front/Mid/Rear (mapped to thermostat instances `0|1|2`)
+- Climate entities now initialize with stable names: `AC Front`, `AC Mid`, `AC Rear`.
+
 ## 2.3.2 - 2026-02-21
 
 - Fixed climate attribute/state mapping for thermostat status payloads:
