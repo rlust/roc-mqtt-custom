@@ -184,6 +184,28 @@ def cmd_send_known(args):
             "before_mode_fan": before_mode,
         }
     }
+
+    if args.auto_probe_on_fail and not success:
+        probe_topics = [
+            "RVC/THERMOSTAT_COMMAND_1/+",
+            "RVC/THERMOSTAT_STATUS_1/+",
+            "RVC/AIR_CONDITIONER_COMMAND/+",
+            "RVC/AIR_CONDITIONER_STATUS/+",
+            "rvcbridge/#",
+            "CP/#",
+        ]
+        probe_rows = capture_topics(args.host, args.port, args.user, args.password, probe_topics, args.probe_seconds)
+        out = Path(args.probe_out)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text("\n".join(json.dumps(r) for r in probe_rows) + ("\n" if probe_rows else ""), encoding="utf-8")
+        result["auto_probe"] = {
+            "enabled": True,
+            "seconds": args.probe_seconds,
+            "messages": len(probe_rows),
+            "out": str(out),
+            "next_step": "Perform one manual VegaTouch up/down action during a fresh probe window to extract live writable signature if needed."
+        }
+
     print(json.dumps(result, indent=2))
 
 
@@ -197,36 +219,37 @@ def cmd_send_raw(args):
     print("published")
 
 
-def cmd_capture(args):
+def capture_topics(host: str, port: int, user: str, password: str, topics: list[str], seconds: float):
     rows = []
-    topics = [
-        f"RVC/THERMOSTAT_COMMAND_1/{args.instance}",
-        f"RVC/THERMOSTAT_STATUS_1/{args.instance}",
-    ]
 
     def on_message(_c, _u, m):
         try:
             payload = json.loads(m.payload.decode())
         except Exception:
             payload = {"raw": m.payload.decode(errors="ignore")}
-        row = {
-            "ts": time.time(),
-            "topic": m.topic,
-            "payload": payload,
-        }
-        rows.append(row)
-        print(json.dumps(row, separators=(",", ":")))
+        rows.append({"ts": time.time(), "topic": m.topic, "payload": payload})
 
-    c = mqtt.Client(client_id=f"therm_cmd_capture_{int(time.time())}")
-    c.username_pw_set(args.user, args.password)
+    c = mqtt.Client(client_id=f"therm_capture_{int(time.time()*1000)}")
+    c.username_pw_set(user, password)
     c.on_message = on_message
-    c.connect(args.host, args.port, 60)
+    c.connect(host, port, 60)
     for t in topics:
         c.subscribe(t)
     c.loop_start()
-    time.sleep(args.seconds)
+    time.sleep(seconds)
     c.loop_stop()
     c.disconnect()
+    return rows
+
+
+def cmd_capture(args):
+    topics = [
+        f"RVC/THERMOSTAT_COMMAND_1/{args.instance}",
+        f"RVC/THERMOSTAT_STATUS_1/{args.instance}",
+    ]
+    rows = capture_topics(args.host, args.port, args.user, args.password, topics, args.seconds)
+    for row in rows:
+        print(json.dumps(row, separators=(",", ":")))
 
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -266,6 +289,9 @@ def main():
     p_known.add_argument("--retry", type=int, default=1, help="Attempts when --confirm is enabled")
     p_known.add_argument("--retry-delay", type=float, default=2.0, help="Seconds between retry attempts")
     p_known.add_argument("--target", choices=["any", "cool", "heat", "both"], default="any", help="Which setpoint(s) must move to count success")
+    p_known.add_argument("--auto-probe-on-fail", action="store_true", help="If confirm fails, run a broad MQTT probe capture")
+    p_known.add_argument("--probe-seconds", type=float, default=20.0, help="Auto-probe capture duration in seconds")
+    p_known.add_argument("--probe-out", default="captures/auto-probe-on-fail.jsonl", help="Auto-probe output JSONL path")
     p_known.add_argument("--dry-run", action="store_true")
     p_known.set_defaults(func=cmd_send_known)
 

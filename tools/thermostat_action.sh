@@ -10,4 +10,12 @@ if [[ ! -x "$VENV_PY" ]]; then
   exit 1
 fi
 
+if [[ $# -gt 0 ]]; then
+  case "$1" in
+    send-known|send-raw|capture|status)
+      exec "$VENV_PY" "$HELPER" "$@"
+      ;;
+  esac
+fi
+
 exec "$VENV_PY" "$HELPER" send-known "$@"

@@ -49,16 +49,19 @@ python3 tools/thermostat_command_helper.py send-known --instance 0 --delta 1
 python3 tools/thermostat_command_helper.py send-known --instance 0 --delta -1 --confirm
 python3 tools/thermostat_command_helper.py send-known --instance 0 --delta 1 --confirm
 
-# Retry mode (recommended when controller is sticky)
-python3 tools/thermostat_command_helper.py send-known --instance 0 --delta 1 --confirm --retry 3 --retry-delay 2 --target any
-
-# Inspect current HVAC mode + fan + setpoints
+# 1) Inspect current HVAC mode + fan + setpoints (recommended first)
 python3 tools/thermostat_command_helper.py status --instance 0 --seconds 6
 
-# Mac mini convenience wrapper (uses .venv-rvc automatically)
-./tools/thermostat_action.sh --instance 0 --delta 1 --confirm --retry 3
+# 2) Retry mode (sticky controller handling)
+python3 tools/thermostat_command_helper.py send-known --instance 0 --delta 1 --confirm --retry 3 --retry-delay 2 --target any
 
-# Capture command/status for 20s while doing one manual VegaTouch action
+# 3) Auto-probe on fail (captures broad topics when retries don't move status)
+python3 tools/thermostat_command_helper.py send-known --instance 0 --delta 1 --confirm --retry 3 --auto-probe-on-fail --probe-seconds 20 --probe-out captures/auto-probe-on-fail.jsonl
+
+# Mac mini convenience wrapper (uses .venv-rvc automatically)
+./tools/thermostat_action.sh --instance 0 --delta 1 --confirm --retry 3 --auto-probe-on-fail
+
+# 4) Manual capture command/status for live reverse engineering
 python3 tools/thermostat_command_helper.py capture --instance 0 --seconds 20 --out captures/thermostat-capture.jsonl
 ```
 
