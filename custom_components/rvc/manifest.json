@@ -1,7 +1,7 @@
 {
   "domain": "rvc",
   "name": "RV-C Integration",
-  "version": "2.3.1",
+  "version": "2.3.2",
   "documentation": "https://github.com/rlust/roc-mqtt-custom",
   "dependencies": ["mqtt"],
   "codeowners": ["@rlust"],

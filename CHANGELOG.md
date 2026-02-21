@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.3.2 - 2026-02-21
+
+- Fixed climate attribute/state mapping for thermostat status payloads:
+  - `temperature` now maps from `setpoint temp cool F` when present.
+  - `current_temperature` now maps from `ambient temp F` when available.
+- Added explicit climate attributes:
+  - `setpoint_cool_f`
+  - `setpoint_heat_f`
+- Keeps existing HVAC/fan command services unchanged.
+
 ## 2.3.1 - 2026-02-21
 
 - Added explicit Front/Mid/Rear zone aliases to HA HVAC interface tooling (`--zone front|mid|rear` maps to instances `0|1|2`).

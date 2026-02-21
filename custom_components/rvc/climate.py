@@ -143,6 +143,8 @@ class RVCClimate(AvailabilityMixin, RestoreEntity, ClimateEntity):
             "fan_mode": None,
             "schedule_mode": None,
             "dead_band": None,
+            "setpoint_cool_f": None,
+            "setpoint_heat_f": None,
             "last_mqtt_update": None,
         }
 
@@ -209,15 +211,27 @@ class RVCClimate(AvailabilityMixin, RestoreEntity, ClimateEntity):
     def handle_mqtt(self, payload: dict[str, Any]) -> None:
         """Update internal state from an MQTT payload."""
         self.mark_seen_now()
+        # Current temperature (if provided by upstream payload)
         if "current_temperature" in payload:
             try:
                 self._attr_current_temperature = float(payload["current_temperature"])
             except (TypeError, ValueError):
                 pass
+        elif "ambient temp F" in payload:
+            try:
+                self._attr_current_temperature = float(payload["ambient temp F"])
+            except (TypeError, ValueError):
+                pass
 
+        # Target temperature mapping
         if "target_temperature" in payload:
             try:
                 self._attr_target_temperature = float(payload["target_temperature"])
+            except (TypeError, ValueError):
+                pass
+        elif "setpoint temp cool F" in payload:
+            try:
+                self._attr_target_temperature = float(payload["setpoint temp cool F"])
             except (TypeError, ValueError):
                 pass
 
@@ -265,6 +279,11 @@ class RVCClimate(AvailabilityMixin, RestoreEntity, ClimateEntity):
         # Dead band (temperature dead band from AIR_CONDITIONER_STATUS)
         if "dead band" in payload:
             attrs["dead_band"] = payload["dead band"]
+
+        if "setpoint temp cool F" in payload:
+            attrs["setpoint_cool_f"] = payload["setpoint temp cool F"]
+        if "setpoint temp heat F" in payload:
+            attrs["setpoint_heat_f"] = payload["setpoint temp heat F"]
 
         # Timestamp for diagnostics
         if "timestamp" in payload:
