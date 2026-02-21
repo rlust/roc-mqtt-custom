@@ -1,0 +1,81 @@
+# Home Assistant package: Mira HVAC control via RV-C MQTT helper
+#
+# How to use:
+# 1) Copy this file into your HA packages folder (example: /config/packages/hvac_mira.yaml)
+# 2) Ensure packages are enabled in configuration.yaml:
+#      homeassistant:
+#        packages: !include_dir_named packages
+# 3) Restart Home Assistant
+#
+# Notes:
+# - These commands run on the machine where Home Assistant runs.
+# - If HA runs on a different host than the Mac mini, replace command paths with SSH wrappers.
+# - Exit code 1 means command published but did not apply (controller gate active).
+
+shell_command:
+  mira_hvac_temp_up: >-
+    /Users/randylust/.openclaw/workspace/.venv-rvc/bin/python
+    /Users/randylust/.openclaw/workspace/roc-mqtt-custom/tools/ha_hvac_interface.py
+    --instance 0 action --action temp_up
+
+  mira_hvac_temp_down: >-
+    /Users/randylust/.openclaw/workspace/.venv-rvc/bin/python
+    /Users/randylust/.openclaw/workspace/roc-mqtt-custom/tools/ha_hvac_interface.py
+    --instance 0 action --action temp_down
+
+  mira_hvac_fan_high: >-
+    /Users/randylust/.openclaw/workspace/.venv-rvc/bin/python
+    /Users/randylust/.openclaw/workspace/roc-mqtt-custom/tools/ha_hvac_interface.py
+    --instance 0 action --action fan_high
+
+  mira_hvac_fan_low: >-
+    /Users/randylust/.openclaw/workspace/.venv-rvc/bin/python
+    /Users/randylust/.openclaw/workspace/roc-mqtt-custom/tools/ha_hvac_interface.py
+    --instance 0 action --action fan_low
+
+  mira_hvac_fan_auto: >-
+    /Users/randylust/.openclaw/workspace/.venv-rvc/bin/python
+    /Users/randylust/.openclaw/workspace/roc-mqtt-custom/tools/ha_hvac_interface.py
+    --instance 0 action --action fan_auto
+
+  mira_hvac_status_json: >-
+    /Users/randylust/.openclaw/workspace/.venv-rvc/bin/python
+    /Users/randylust/.openclaw/workspace/roc-mqtt-custom/tools/ha_hvac_interface.py
+    --instance 0 status
+
+script:
+  mira_hvac_temp_up:
+    alias: Mira HVAC Temp Up
+    mode: restart
+    sequence:
+      - action: shell_command.mira_hvac_temp_up
+
+  mira_hvac_temp_down:
+    alias: Mira HVAC Temp Down
+    mode: restart
+    sequence:
+      - action: shell_command.mira_hvac_temp_down
+
+  mira_hvac_fan_high:
+    alias: Mira HVAC Fan High
+    mode: restart
+    sequence:
+      - action: shell_command.mira_hvac_fan_high
+
+  mira_hvac_fan_low:
+    alias: Mira HVAC Fan Low
+    mode: restart
+    sequence:
+      - action: shell_command.mira_hvac_fan_low
+
+  mira_hvac_fan_auto:
+    alias: Mira HVAC Fan Auto
+    mode: restart
+    sequence:
+      - action: shell_command.mira_hvac_fan_auto
+
+# Optional helper for dashboard visibility
+input_boolean:
+  mira_hvac_gate_assist:
+    name: Mira HVAC Gate Assist
+    icon: mdi:hand-pointing-up
