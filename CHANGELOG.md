@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.3.1 - 2026-02-21
+
+- Added explicit Front/Mid/Rear zone aliases to HA HVAC interface tooling (`--zone front|mid|rear` maps to instances `0|1|2`).
+- Updated HA package template (`tools/hvac_mira_package.yaml`) with zone-specific shell commands/scripts for Mid and Rear setpoint controls.
+- Updated Home Assistant HVAC interface docs with canonical zone/entity mapping.
+- Bumped custom component manifest version to `2.3.1` for release alignment.
+
 ## 2.3.0 - 2026-02-21
 
 - Added Mira/Firefly-focused HVAC command support in the custom component climate platform using learned `THERMOSTAT_COMMAND_1` signatures.
