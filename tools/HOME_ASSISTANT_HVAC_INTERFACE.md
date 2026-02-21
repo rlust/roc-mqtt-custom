@@ -13,6 +13,12 @@ Use `ha_hvac_interface.py` for HA automations/scripts (non-interactive).
 
 ---
 
+## Zone mapping
+
+- Front: `zone=front` => instance `0` => `climate.air_conditioner_status`
+- Mid: `zone=mid` => instance `1` => `climate.air_conditioner_status_2`
+- Rear: `zone=rear` => instance `2` => `climate.air_conditioner_status_3`
+
 ## Actions supported
 
 `ha_hvac_interface.py action --action <name>`
@@ -37,15 +43,15 @@ And status:
   /Users/randylust/.openclaw/workspace/roc-mqtt-custom/tools/ha_hvac_interface.py \
   --instance 0 status
 
-# Temp up
+# Temp up (front)
 /Users/randylust/.openclaw/workspace/.venv-rvc/bin/python \
   /Users/randylust/.openclaw/workspace/roc-mqtt-custom/tools/ha_hvac_interface.py \
-  --instance 0 action --action temp_up
+  --zone front action --action temp_up
 
-# Fan low
+# Fan low (mid)
 /Users/randylust/.openclaw/workspace/.venv-rvc/bin/python \
   /Users/randylust/.openclaw/workspace/roc-mqtt-custom/tools/ha_hvac_interface.py \
-  --instance 0 action --action fan_low
+  --zone mid action --action fan_low
 ```
 
 Exit code:

@@ -91,8 +91,15 @@ def action_data(action):
     }[action]
 
 
+def resolve_instance(args):
+    if args.zone:
+        return {"front": 0, "mid": 1, "rear": 2}[args.zone]
+    return args.instance
+
+
 def run_action(args):
-    before = capture_status_series(args.host, args.port, args.user, args.password, args.instance, args.confirm_seconds)
+    instance = resolve_instance(args)
+    before = capture_status_series(args.host, args.port, args.user, args.password, instance, args.confirm_seconds)
     baseline = status_view(before[-1]) if before else {}
 
     observed = []
@@ -103,12 +110,12 @@ def run_action(args):
             args.port,
             args.user,
             args.password,
-            args.instance,
+            instance,
             action_data(args.action),
             args.burst_seconds,
             args.burst_interval,
         )
-        after = capture_status_series(args.host, args.port, args.user, args.password, args.instance, args.confirm_seconds)
+        after = capture_status_series(args.host, args.port, args.user, args.password, instance, args.confirm_seconds)
         views = [status_view(x) for x in after]
         observed.extend(views)
         if any(changed_for_action(args.action, baseline, v) for v in views):
@@ -129,7 +136,8 @@ def run_action(args):
     result = {
         "ok": success,
         "action": args.action,
-        "instance": args.instance,
+        "zone": args.zone,
+        "instance": instance,
         "baseline": baseline,
         "observed": uniq,
         "retry": args.retry,
@@ -140,9 +148,10 @@ def run_action(args):
 
 
 def run_status(args):
-    rows = capture_status_series(args.host, args.port, args.user, args.password, args.instance, args.confirm_seconds)
+    instance = resolve_instance(args)
+    rows = capture_status_series(args.host, args.port, args.user, args.password, instance, args.confirm_seconds)
     latest = status_view(rows[-1]) if rows else {}
-    print(json.dumps({"ok": bool(rows), "instance": args.instance, "latest": latest}, indent=2))
+    print(json.dumps({"ok": bool(rows), "zone": args.zone, "instance": instance, "latest": latest}, indent=2))
     return 0 if rows else 1
 
 
@@ -153,6 +162,7 @@ def main():
     ap.add_argument("--user", default="rc")
     ap.add_argument("--password", default="rc")
     ap.add_argument("--instance", type=int, default=0)
+    ap.add_argument("--zone", choices=["front", "mid", "rear"], help="Zone alias (front=0, mid=1, rear=2)")
     ap.add_argument("--confirm-seconds", type=float, default=6.0)
     ap.add_argument("--retry", type=int, default=3)
     ap.add_argument("--retry-delay", type=float, default=2.0)

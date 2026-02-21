@@ -16,32 +16,62 @@ shell_command:
   mira_hvac_temp_up: >-
     /Users/randylust/.openclaw/workspace/.venv-rvc/bin/python
     /Users/randylust/.openclaw/workspace/roc-mqtt-custom/tools/ha_hvac_interface.py
-    --instance 0 action --action temp_up
+    --zone front action --action temp_up
 
   mira_hvac_temp_down: >-
     /Users/randylust/.openclaw/workspace/.venv-rvc/bin/python
     /Users/randylust/.openclaw/workspace/roc-mqtt-custom/tools/ha_hvac_interface.py
-    --instance 0 action --action temp_down
+    --zone front action --action temp_down
+
+  mira_hvac_temp_up_mid: >-
+    /Users/randylust/.openclaw/workspace/.venv-rvc/bin/python
+    /Users/randylust/.openclaw/workspace/roc-mqtt-custom/tools/ha_hvac_interface.py
+    --zone mid action --action temp_up
+
+  mira_hvac_temp_down_mid: >-
+    /Users/randylust/.openclaw/workspace/.venv-rvc/bin/python
+    /Users/randylust/.openclaw/workspace/roc-mqtt-custom/tools/ha_hvac_interface.py
+    --zone mid action --action temp_down
+
+  mira_hvac_temp_up_rear: >-
+    /Users/randylust/.openclaw/workspace/.venv-rvc/bin/python
+    /Users/randylust/.openclaw/workspace/roc-mqtt-custom/tools/ha_hvac_interface.py
+    --zone rear action --action temp_up
+
+  mira_hvac_temp_down_rear: >-
+    /Users/randylust/.openclaw/workspace/.venv-rvc/bin/python
+    /Users/randylust/.openclaw/workspace/roc-mqtt-custom/tools/ha_hvac_interface.py
+    --zone rear action --action temp_down
 
   mira_hvac_fan_high: >-
     /Users/randylust/.openclaw/workspace/.venv-rvc/bin/python
     /Users/randylust/.openclaw/workspace/roc-mqtt-custom/tools/ha_hvac_interface.py
-    --instance 0 action --action fan_high
+    --zone front action --action fan_high
 
   mira_hvac_fan_low: >-
     /Users/randylust/.openclaw/workspace/.venv-rvc/bin/python
     /Users/randylust/.openclaw/workspace/roc-mqtt-custom/tools/ha_hvac_interface.py
-    --instance 0 action --action fan_low
+    --zone front action --action fan_low
 
   mira_hvac_fan_auto: >-
     /Users/randylust/.openclaw/workspace/.venv-rvc/bin/python
     /Users/randylust/.openclaw/workspace/roc-mqtt-custom/tools/ha_hvac_interface.py
-    --instance 0 action --action fan_auto
+    --zone front action --action fan_auto
 
   mira_hvac_status_json: >-
     /Users/randylust/.openclaw/workspace/.venv-rvc/bin/python
     /Users/randylust/.openclaw/workspace/roc-mqtt-custom/tools/ha_hvac_interface.py
-    --instance 0 status
+    --zone front status
+
+  mira_hvac_status_json_mid: >-
+    /Users/randylust/.openclaw/workspace/.venv-rvc/bin/python
+    /Users/randylust/.openclaw/workspace/roc-mqtt-custom/tools/ha_hvac_interface.py
+    --zone mid status
+
+  mira_hvac_status_json_rear: >-
+    /Users/randylust/.openclaw/workspace/.venv-rvc/bin/python
+    /Users/randylust/.openclaw/workspace/roc-mqtt-custom/tools/ha_hvac_interface.py
+    --zone rear status
 
 script:
   mira_hvac_temp_up:
@@ -55,6 +85,30 @@ script:
     mode: restart
     sequence:
       - action: shell_command.mira_hvac_temp_down
+
+  mira_hvac_temp_up_mid:
+    alias: Mira HVAC Temp Up (Mid)
+    mode: restart
+    sequence:
+      - action: shell_command.mira_hvac_temp_up_mid
+
+  mira_hvac_temp_down_mid:
+    alias: Mira HVAC Temp Down (Mid)
+    mode: restart
+    sequence:
+      - action: shell_command.mira_hvac_temp_down_mid
+
+  mira_hvac_temp_up_rear:
+    alias: Mira HVAC Temp Up (Rear)
+    mode: restart
+    sequence:
+      - action: shell_command.mira_hvac_temp_up_rear
+
+  mira_hvac_temp_down_rear:
+    alias: Mira HVAC Temp Down (Rear)
+    mode: restart
+    sequence:
+      - action: shell_command.mira_hvac_temp_down_rear
 
   mira_hvac_fan_high:
     alias: Mira HVAC Fan High
