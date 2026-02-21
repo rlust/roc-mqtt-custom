@@ -27,6 +27,21 @@ python3 tools/ac_command_publish.py --instance 1 --mode 0 --fan-speed 50
 
 Watch for correlated update on `RVC/AIR_CONDITIONER_STATUS/1` within 2–5 seconds.
 
+## Thermostat helper (recommended for setpoint testing)
+
+Use the helper for `THERMOSTAT_COMMAND_1` signatures discovered from live VegaTouch actions:
+
+```bash
+# Dry run known-good "down 1°F" signature (instance 0)
+python3 tools/thermostat_command_helper.py send-known --instance 0 --action down1 --dry-run
+
+# Publish it
+python3 tools/thermostat_command_helper.py send-known --instance 0 --action down1
+
+# Capture command/status for 20s while doing one manual VegaTouch action
+python3 tools/thermostat_command_helper.py capture --instance 0 --seconds 20 --out captures/thermostat-capture.jsonl
+```
+
 ## Notes
 
 - Keep one-zone-at-a-time changes.
