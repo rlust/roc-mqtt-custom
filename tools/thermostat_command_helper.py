@@ -46,10 +46,19 @@ def action_to_data(instance: int, action: str) -> str:
 
 
 def cmd_send_known(args):
-    data_hex = action_to_data(args.instance, args.action)
+    action = args.action
+    if args.delta is not None:
+        if args.delta == 1:
+            action = "up1"
+        elif args.delta == -1:
+            action = "down1"
+        else:
+            raise ValueError("--delta supports only +1 or -1")
+
+    data_hex = action_to_data(args.instance, action)
     payload = build_command_payload(args.instance, data_hex)
     topic = f"RVC/THERMOSTAT_COMMAND_1/{args.instance}"
-    print(json.dumps({"topic": topic, "payload": payload}, indent=2))
+    print(json.dumps({"topic": topic, "payload": payload, "resolved_action": action}, indent=2))
     if args.dry_run:
         return
     publish(args.host, args.port, args.user, args.password, topic, payload)
@@ -116,6 +125,7 @@ def main():
     p_known = sub.add_parser("send-known", help="Send known-good action signature")
     p_known.add_argument("--instance", type=int, default=0)
     p_known.add_argument("--action", choices=["down1", "up1"], default="down1")
+    p_known.add_argument("--delta", type=int, choices=[-1, 1], help="Alternative to --action: -1=down1, +1=up1")
     p_known.add_argument("--dry-run", action="store_true")
     p_known.set_defaults(func=cmd_send_known)
 
