@@ -49,6 +49,15 @@ python3 tools/thermostat_command_helper.py send-known --instance 0 --delta 1
 python3 tools/thermostat_command_helper.py send-known --instance 0 --delta -1 --confirm
 python3 tools/thermostat_command_helper.py send-known --instance 0 --delta 1 --confirm
 
+# Retry mode (recommended when controller is sticky)
+python3 tools/thermostat_command_helper.py send-known --instance 0 --delta 1 --confirm --retry 3 --retry-delay 2 --target any
+
+# Inspect current HVAC mode + fan + setpoints
+python3 tools/thermostat_command_helper.py status --instance 0 --seconds 6
+
+# Mac mini convenience wrapper (uses .venv-rvc automatically)
+./tools/thermostat_action.sh --instance 0 --delta 1 --confirm --retry 3
+
 # Capture command/status for 20s while doing one manual VegaTouch action
 python3 tools/thermostat_command_helper.py capture --instance 0 --seconds 20 --out captures/thermostat-capture.jsonl
 ```

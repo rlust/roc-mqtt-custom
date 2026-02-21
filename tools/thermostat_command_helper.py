@@ -63,6 +63,45 @@ def _extract_setpoints(status_payload):
     return status_payload.get("setpoint temp cool F"), status_payload.get("setpoint temp heat F")
 
 
+def _passes_target(baseline, candidate, target: str, direction: str | None):
+    b_cool, b_heat = baseline
+    c_cool, c_heat = candidate
+
+    def cmp(new, old):
+        if new is None or old is None:
+            return False
+        if direction == "up":
+            return new > old
+        if direction == "down":
+            return new < old
+        return new != old
+
+    cool_ok = cmp(c_cool, b_cool)
+    heat_ok = cmp(c_heat, b_heat)
+
+    if target == "cool":
+        return cool_ok
+    if target == "heat":
+        return heat_ok
+    if target == "both":
+        return cool_ok and heat_ok
+    return cool_ok or heat_ok  # any
+
+
+def _current_mode_fan(status_payload: dict):
+    return {
+        "operating_mode": status_payload.get("operating mode"),
+        "operating_mode_definition": status_payload.get("operating mode definition"),
+        "fan_mode": status_payload.get("fan mode"),
+        "fan_mode_definition": status_payload.get("fan mode definition"),
+        "fan_speed": status_payload.get("fan speed"),
+        "cool_f": status_payload.get("setpoint temp cool F"),
+        "heat_f": status_payload.get("setpoint temp heat F"),
+        "data": status_payload.get("data"),
+        "timestamp": status_payload.get("timestamp"),
+    }
+
+
 def action_to_data(instance: int, action: str) -> str:
     # Known-good signatures captured during manual VegaTouch setpoint actions.
     # First byte tracks instance.
@@ -84,6 +123,12 @@ def cmd_send_known(args):
         else:
             raise ValueError("--delta supports only +1 or -1")
 
+    direction = None
+    if action == "up1":
+        direction = "up"
+    elif action == "down1":
+        direction = "down"
+
     data_hex = action_to_data(args.instance, action)
     payload = build_command_payload(args.instance, data_hex)
     topic = f"RVC/THERMOSTAT_COMMAND_1/{args.instance}"
@@ -91,32 +136,55 @@ def cmd_send_known(args):
     if args.dry_run:
         return
 
-    before_series = []
+    baseline = (None, None)
+    before_mode = None
     if args.confirm:
         before_series = get_status_series(args.host, args.port, args.user, args.password, args.instance, args.confirm_timeout)
-
-    publish(args.host, args.port, args.user, args.password, topic, payload)
-    print("published")
-
-    if args.confirm:
-        after_series = get_status_series(args.host, args.port, args.user, args.password, args.instance, args.confirm_timeout)
-
         before_pairs = [p for p in (_extract_setpoints(x) for x in before_series) if p != (None, None)]
-        after_pairs = [p for p in (_extract_setpoints(x) for x in after_series) if p != (None, None)]
-
         baseline = before_pairs[-1] if before_pairs else (None, None)
-        changed_pairs = [p for p in after_pairs if p != baseline]
-        changed = len(changed_pairs) > 0
+        if before_series:
+            before_mode = _current_mode_fan(before_series[-1])
 
-        print(json.dumps({
-            "confirm": {
-                "instance": args.instance,
-                "baseline": {"cool_f": baseline[0], "heat_f": baseline[1]},
-                "after_observed": [{"cool_f": p[0], "heat_f": p[1]} for p in sorted(set(after_pairs))],
-                "changed": changed,
-                "timeout_s": args.confirm_timeout
-            }
-        }, indent=2))
+    observed_pairs = []
+    success = False
+    attempts = max(1, args.retry)
+
+    for attempt in range(1, attempts + 1):
+        payload["timestamp"] = f"{time.time():.6f}"
+        publish(args.host, args.port, args.user, args.password, topic, payload)
+        print(f"published attempt={attempt}")
+
+        if not args.confirm:
+            continue
+
+        after_series = get_status_series(args.host, args.port, args.user, args.password, args.instance, args.confirm_timeout)
+        after_pairs = [p for p in (_extract_setpoints(x) for x in after_series) if p != (None, None)]
+        observed_pairs.extend(after_pairs)
+
+        # Determine success against baseline.
+        uniq_after = sorted(set(after_pairs))
+        if any(_passes_target(baseline, p, args.target, direction) for p in uniq_after):
+            success = True
+            break
+
+        if attempt < attempts:
+            time.sleep(args.retry_delay)
+
+    result = {
+        "confirm": {
+            "instance": args.instance,
+            "baseline": {"cool_f": baseline[0], "heat_f": baseline[1]},
+            "target": args.target,
+            "direction": direction,
+            "attempts": attempts,
+            "retry_delay_s": args.retry_delay,
+            "after_observed": [{"cool_f": p[0], "heat_f": p[1]} for p in sorted(set(observed_pairs))],
+            "changed": success,
+            "timeout_s": args.confirm_timeout,
+            "before_mode_fan": before_mode,
+        }
+    }
+    print(json.dumps(result, indent=2))
 
 
 def cmd_send_raw(args):
@@ -166,6 +234,19 @@ def cmd_capture(args):
     print(f"saved={out} messages={len(rows)}")
 
 
+def cmd_status(args):
+    series = get_status_series(args.host, args.port, args.user, args.password, args.instance, args.seconds)
+    if not series:
+        print(json.dumps({"status": "no_messages", "instance": args.instance}, indent=2))
+        return
+    latest = series[-1]
+    print(json.dumps({
+        "instance": args.instance,
+        "messages": len(series),
+        "latest": _current_mode_fan(latest)
+    }, indent=2))
+
+
 
 def main():
     ap = argparse.ArgumentParser(description="Thermostat command helper")
@@ -181,7 +262,10 @@ def main():
     p_known.add_argument("--action", choices=["down1", "up1"], default="down1")
     p_known.add_argument("--delta", type=int, choices=[-1, 1], help="Alternative to --action: -1=down1, +1=up1")
     p_known.add_argument("--confirm", action="store_true", help="Read status before/after publish and report setpoint change")
-    p_known.add_argument("--confirm-timeout", type=float, default=6.0, help="Seconds to wait for each status read")
+    p_known.add_argument("--confirm-timeout", type=float, default=6.0, help="Seconds to collect each status sample window")
+    p_known.add_argument("--retry", type=int, default=1, help="Attempts when --confirm is enabled")
+    p_known.add_argument("--retry-delay", type=float, default=2.0, help="Seconds between retry attempts")
+    p_known.add_argument("--target", choices=["any", "cool", "heat", "both"], default="any", help="Which setpoint(s) must move to count success")
     p_known.add_argument("--dry-run", action="store_true")
     p_known.set_defaults(func=cmd_send_known)
 
@@ -196,6 +280,11 @@ def main():
     p_cap.add_argument("--seconds", type=int, default=20)
     p_cap.add_argument("--out", default="captures/thermostat-capture.jsonl")
     p_cap.set_defaults(func=cmd_capture)
+
+    p_status = sub.add_parser("status", help="Read current thermostat mode/fan/setpoints")
+    p_status.add_argument("--instance", type=int, default=0)
+    p_status.add_argument("--seconds", type=float, default=3.0)
+    p_status.set_defaults(func=cmd_status)
 
     args = ap.parse_args()
     args.func(args)
