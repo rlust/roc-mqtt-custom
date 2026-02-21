@@ -45,6 +45,10 @@ python3 tools/thermostat_command_helper.py send-known --instance 0 --action up1
 python3 tools/thermostat_command_helper.py send-known --instance 0 --delta -1
 python3 tools/thermostat_command_helper.py send-known --instance 0 --delta 1
 
+# Publish + auto-verify status changed
+python3 tools/thermostat_command_helper.py send-known --instance 0 --delta -1 --confirm
+python3 tools/thermostat_command_helper.py send-known --instance 0 --delta 1 --confirm
+
 # Capture command/status for 20s while doing one manual VegaTouch action
 python3 tools/thermostat_command_helper.py capture --instance 0 --seconds 20 --out captures/thermostat-capture.jsonl
 ```

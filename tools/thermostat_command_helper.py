@@ -34,6 +34,38 @@ def publish(host: str, port: int, user: str, password: str, topic: str, payload:
     c.disconnect()
 
 
+def get_latest_status(host: str, port: int, user: str, password: str, instance: int, timeout_s: float = 6.0):
+    topic = f"RVC/THERMOSTAT_STATUS_1/{instance}"
+    latest = {"payload": None}
+
+    def on_message(_c, _u, m):
+        try:
+            latest["payload"] = json.loads(m.payload.decode())
+        except Exception:
+            latest["payload"] = {"raw": m.payload.decode(errors="ignore")}
+
+    c = mqtt.Client(client_id=f"therm_status_once_{int(time.time()*1000)}")
+    c.username_pw_set(user, password)
+    c.on_message = on_message
+    c.connect(host, port, 60)
+    c.subscribe(topic)
+    c.loop_start()
+    start = time.time()
+    while time.time() - start < timeout_s:
+        if latest["payload"] is not None:
+            break
+        time.sleep(0.05)
+    c.loop_stop()
+    c.disconnect()
+    return latest["payload"]
+
+
+def _extract_setpoints(status_payload):
+    if not isinstance(status_payload, dict):
+        return None, None
+    return status_payload.get("setpoint temp cool F"), status_payload.get("setpoint temp heat F")
+
+
 def action_to_data(instance: int, action: str) -> str:
     # Known-good signatures captured during manual VegaTouch setpoint actions.
     # First byte tracks instance.
@@ -61,8 +93,28 @@ def cmd_send_known(args):
     print(json.dumps({"topic": topic, "payload": payload, "resolved_action": action}, indent=2))
     if args.dry_run:
         return
+
+    before = None
+    if args.confirm:
+        before = get_latest_status(args.host, args.port, args.user, args.password, args.instance, args.confirm_timeout)
+
     publish(args.host, args.port, args.user, args.password, topic, payload)
     print("published")
+
+    if args.confirm:
+        after = get_latest_status(args.host, args.port, args.user, args.password, args.instance, args.confirm_timeout)
+        before_cool, before_heat = _extract_setpoints(before)
+        after_cool, after_heat = _extract_setpoints(after)
+        changed = (before_cool != after_cool) or (before_heat != after_heat)
+        print(json.dumps({
+            "confirm": {
+                "instance": args.instance,
+                "before": {"cool_f": before_cool, "heat_f": before_heat},
+                "after": {"cool_f": after_cool, "heat_f": after_heat},
+                "changed": changed,
+                "timeout_s": args.confirm_timeout
+            }
+        }, indent=2))
 
 
 def cmd_send_raw(args):
@@ -126,6 +178,8 @@ def main():
     p_known.add_argument("--instance", type=int, default=0)
     p_known.add_argument("--action", choices=["down1", "up1"], default="down1")
     p_known.add_argument("--delta", type=int, choices=[-1, 1], help="Alternative to --action: -1=down1, +1=up1")
+    p_known.add_argument("--confirm", action="store_true", help="Read status before/after publish and report setpoint change")
+    p_known.add_argument("--confirm-timeout", type=float, default=6.0, help="Seconds to wait for each status read")
     p_known.add_argument("--dry-run", action="store_true")
     p_known.set_defaults(func=cmd_send_known)
 
