@@ -34,30 +34,27 @@ def publish(host: str, port: int, user: str, password: str, topic: str, payload:
     c.disconnect()
 
 
-def get_latest_status(host: str, port: int, user: str, password: str, instance: int, timeout_s: float = 6.0):
+def get_status_series(host: str, port: int, user: str, password: str, instance: int, window_s: float = 6.0):
     topic = f"RVC/THERMOSTAT_STATUS_1/{instance}"
-    latest = {"payload": None}
+    series = []
 
     def on_message(_c, _u, m):
         try:
-            latest["payload"] = json.loads(m.payload.decode())
+            payload = json.loads(m.payload.decode())
         except Exception:
-            latest["payload"] = {"raw": m.payload.decode(errors="ignore")}
+            payload = {"raw": m.payload.decode(errors="ignore")}
+        series.append(payload)
 
-    c = mqtt.Client(client_id=f"therm_status_once_{int(time.time()*1000)}")
+    c = mqtt.Client(client_id=f"therm_status_series_{int(time.time()*1000)}")
     c.username_pw_set(user, password)
     c.on_message = on_message
     c.connect(host, port, 60)
     c.subscribe(topic)
     c.loop_start()
-    start = time.time()
-    while time.time() - start < timeout_s:
-        if latest["payload"] is not None:
-            break
-        time.sleep(0.05)
+    time.sleep(window_s)
     c.loop_stop()
     c.disconnect()
-    return latest["payload"]
+    return series
 
 
 def _extract_setpoints(status_payload):
@@ -94,23 +91,28 @@ def cmd_send_known(args):
     if args.dry_run:
         return
 
-    before = None
+    before_series = []
     if args.confirm:
-        before = get_latest_status(args.host, args.port, args.user, args.password, args.instance, args.confirm_timeout)
+        before_series = get_status_series(args.host, args.port, args.user, args.password, args.instance, args.confirm_timeout)
 
     publish(args.host, args.port, args.user, args.password, topic, payload)
     print("published")
 
     if args.confirm:
-        after = get_latest_status(args.host, args.port, args.user, args.password, args.instance, args.confirm_timeout)
-        before_cool, before_heat = _extract_setpoints(before)
-        after_cool, after_heat = _extract_setpoints(after)
-        changed = (before_cool != after_cool) or (before_heat != after_heat)
+        after_series = get_status_series(args.host, args.port, args.user, args.password, args.instance, args.confirm_timeout)
+
+        before_pairs = [p for p in (_extract_setpoints(x) for x in before_series) if p != (None, None)]
+        after_pairs = [p for p in (_extract_setpoints(x) for x in after_series) if p != (None, None)]
+
+        baseline = before_pairs[-1] if before_pairs else (None, None)
+        changed_pairs = [p for p in after_pairs if p != baseline]
+        changed = len(changed_pairs) > 0
+
         print(json.dumps({
             "confirm": {
                 "instance": args.instance,
-                "before": {"cool_f": before_cool, "heat_f": before_heat},
-                "after": {"cool_f": after_cool, "heat_f": after_heat},
+                "baseline": {"cool_f": baseline[0], "heat_f": baseline[1]},
+                "after_observed": [{"cool_f": p[0], "heat_f": p[1]} for p in sorted(set(after_pairs))],
                 "changed": changed,
                 "timeout_s": args.confirm_timeout
             }
