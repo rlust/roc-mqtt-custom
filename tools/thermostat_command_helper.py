@@ -35,11 +35,13 @@ def publish(host: str, port: int, user: str, password: str, topic: str, payload:
 
 
 def action_to_data(instance: int, action: str) -> str:
-    # Known-good signature captured during manual VegaTouch setpoint-down action.
+    # Known-good signatures captured during manual VegaTouch setpoint actions.
     # First byte tracks instance.
     prefix = f"{instance:02X}"
     if action == "down1":
         return prefix + "FFFFFFFFF9FFFF"
+    if action == "up1":
+        return prefix + "FFFFFFFFFAFFFF"
     raise ValueError(f"Unsupported action: {action}")
 
 
@@ -113,7 +115,7 @@ def main():
 
     p_known = sub.add_parser("send-known", help="Send known-good action signature")
     p_known.add_argument("--instance", type=int, default=0)
-    p_known.add_argument("--action", choices=["down1"], default="down1")
+    p_known.add_argument("--action", choices=["down1", "up1"], default="down1")
     p_known.add_argument("--dry-run", action="store_true")
     p_known.set_defaults(func=cmd_send_known)
 

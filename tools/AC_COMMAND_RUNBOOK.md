@@ -32,11 +32,14 @@ Watch for correlated update on `RVC/AIR_CONDITIONER_STATUS/1` within 2–5 secon
 Use the helper for `THERMOSTAT_COMMAND_1` signatures discovered from live VegaTouch actions:
 
 ```bash
-# Dry run known-good "down 1°F" signature (instance 0)
+# Dry run known-good signatures (instance 0)
 python3 tools/thermostat_command_helper.py send-known --instance 0 --action down1 --dry-run
+python3 tools/thermostat_command_helper.py send-known --instance 0 --action up1 --dry-run
 
-# Publish it
+# Publish one
 python3 tools/thermostat_command_helper.py send-known --instance 0 --action down1
+# or
+python3 tools/thermostat_command_helper.py send-known --instance 0 --action up1
 
 # Capture command/status for 20s while doing one manual VegaTouch action
 python3 tools/thermostat_command_helper.py capture --instance 0 --seconds 20 --out captures/thermostat-capture.jsonl
