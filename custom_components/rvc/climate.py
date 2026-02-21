@@ -1,8 +1,11 @@
 """Platform for RV-C climate devices."""
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any
+
+import voluptuous as vol
 
 from homeassistant.components.climate import ClimateEntity
 from homeassistant.components.climate.const import (
@@ -15,6 +18,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
+from homeassistant.helpers import entity_platform
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
@@ -39,6 +43,20 @@ def _coerce_int(value: Any, fallback: int) -> int:
         return max(0, int(value))
     except (TypeError, ValueError):
         return fallback
+
+
+# Learned Mira thermostat command signatures (instance byte is prepended)
+TEMP_UP_SUFFIX = "FFFFFFFFFAFFFF"
+TEMP_DOWN_SUFFIX = "FFFFFFFFF9FFFF"
+FAN_HIGH_SUFFIX = "DFC8FFFFFFFFFF"
+FAN_LOW_SUFFIX = "DF64FFFFFFFFFF"
+FAN_AUTO_SUFFIX = "CFFFFFFFFFFFFF"
+
+FAN_MODE_SIGNATURES: dict[str, str] = {
+    "high": FAN_HIGH_SUFFIX,
+    "low": FAN_LOW_SUFFIX,
+    "auto": FAN_AUTO_SUFFIX,
+}
 
 
 async def async_setup_entry(
@@ -80,12 +98,22 @@ async def async_setup_entry(
     unsub = async_dispatcher_connect(hass, SIGNAL_DISCOVERY, _discovery_callback)
     data["unsub_dispatchers"].append(unsub)
 
+    platform = entity_platform.async_get_current_platform()
+    platform.async_register_entity_service("step_temperature_up", {}, "async_step_temperature_up")
+    platform.async_register_entity_service("step_temperature_down", {}, "async_step_temperature_down")
+    platform.async_register_entity_service(
+        "set_fan_profile",
+        vol.Schema({vol.Required("fan_profile"): vol.In(["auto", "low", "high"])}),
+        "async_set_fan_profile",
+    )
+
 
 class RVCClimate(AvailabilityMixin, RestoreEntity, ClimateEntity):
     """Representation of an RV-C climate zone."""
 
-    _attr_supported_features = ClimateEntityFeature.TARGET_TEMPERATURE
+    _attr_supported_features = ClimateEntityFeature.TARGET_TEMPERATURE | ClimateEntityFeature.FAN_MODE
     _attr_hvac_modes = [HVACMode.OFF, HVACMode.COOL, HVACMode.HEAT, HVACMode.AUTO]
+    _attr_fan_modes = ["auto", "low", "high"]
 
     def __init__(
         self,
@@ -100,6 +128,7 @@ class RVCClimate(AvailabilityMixin, RestoreEntity, ClimateEntity):
         self._instance = instance_id
         self._topic_prefix = topic_prefix
         self._attr_hvac_mode = HVACMode.AUTO
+        self._attr_fan_mode = "auto"
         self._attr_target_temperature = 22.0
         self._attr_current_temperature = None
         self._attr_temperature_unit = UnitOfTemperature.FAHRENHEIT  # RV-C uses Fahrenheit
@@ -140,6 +169,9 @@ class RVCClimate(AvailabilityMixin, RestoreEntity, ClimateEntity):
                 self._attr_current_temperature = float(curr)
             except (TypeError, ValueError):
                 pass
+
+        if (fan_mode := last_state.attributes.get("fan_mode")) in ("auto", "low", "high"):
+            self._attr_fan_mode = fan_mode
 
     @property
     def unique_id(self) -> str:
@@ -207,9 +239,20 @@ class RVCClimate(AvailabilityMixin, RestoreEntity, ClimateEntity):
         if "fan speed" in payload:
             attrs["fan_speed_actual"] = payload["fan speed"]
 
-        # Fan mode (from THERMOSTAT_STATUS_1)
-        if "fan mode definition" in payload:
-            attrs["fan_mode"] = payload["fan mode definition"]
+        # Fan mode (from THERMOSTAT_STATUS_1) + HA fan mode mapping
+        fan_def = payload.get("fan mode definition")
+        fan_speed = payload.get("fan speed")
+        if fan_def is not None:
+            attrs["fan_mode"] = fan_def
+            fan_def_l = str(fan_def).lower()
+            if fan_def_l == "auto":
+                self._attr_fan_mode = "auto"
+            elif fan_def_l == "on":
+                # RV-C only exposes on + speed; map to low/high for HA UX
+                try:
+                    self._attr_fan_mode = "high" if int(fan_speed) >= 100 else "low"
+                except (TypeError, ValueError):
+                    self._attr_fan_mode = "high"
         elif "fan mode" in payload:
             attrs["fan_mode"] = f"Mode {payload['fan mode']}"
 
@@ -260,20 +303,24 @@ class RVCClimate(AvailabilityMixin, RestoreEntity, ClimateEntity):
         self.async_write_ha_state()
 
     async def async_set_temperature(self, **kwargs: Any) -> None:
-        """Set new target temperature and publish to MQTT."""
+        """Set new target temperature and publish to MQTT.
+
+        For Mira/Firefly controllers, deterministic absolute writes are state-gated.
+        We map requested temperature deltas to learned 1°F signatures.
+        """
         if "temperature" in kwargs:
-            temp = float(kwargs["temperature"])
-            self._attr_target_temperature = temp
+            requested = float(kwargs["temperature"])
+            current = self._attr_target_temperature or requested
 
-            # Publish temperature setpoint command
-            # Include both Celsius and Fahrenheit for bridge compatibility
-            payload = {
-                "target_temperature": temp,
-                "setpoint_temp_cool": temp,  # RV-C field name
-                "setpoint_temp_heat": temp,  # RV-C field name
-            }
+            # Update optimistic target for UI responsiveness
+            self._attr_target_temperature = requested
 
-            # If HVAC mode is also being set
+            if requested > current:
+                await self._async_publish_signature(TEMP_UP_SUFFIX)
+            elif requested < current:
+                await self._async_publish_signature(TEMP_DOWN_SUFFIX)
+
+            # If HVAC mode is also being set, keep legacy bridge compatibility
             if "hvac_mode" in kwargs:
                 hvac_mode = kwargs["hvac_mode"]
                 self._attr_hvac_mode = hvac_mode
@@ -283,15 +330,61 @@ class RVCClimate(AvailabilityMixin, RestoreEntity, ClimateEntity):
                     HVACMode.HEAT: 2,
                     HVACMode.AUTO: 3,
                 }
-                payload["operating_mode"] = mode_map.get(hvac_mode, 0)
-                payload["hvac_mode"] = hvac_mode.value
+                payload = {
+                    "operating_mode": mode_map.get(hvac_mode, 0),
+                    "hvac_mode": hvac_mode.value,
+                }
+                await mqtt.async_publish(
+                    self.hass,
+                    self._command_topic,
+                    json.dumps(payload),
+                    qos=0,
+                    retain=False,
+                )
 
+            self.async_write_ha_state()
+
+    async def _async_publish_signature(self, suffix: str, *, burst_seconds: float = 2.5, burst_interval: float = 0.35) -> None:
+        """Publish learned THERMOSTAT_COMMAND_1 signature with short burst for gate reliability."""
+        prefix = f"{int(self._instance):02X}"
+        data_hex = f"{prefix}{suffix}"
+        topic = f"RVC/THERMOSTAT_COMMAND_1/{self._instance}"
+
+        end = self.hass.loop.time() + burst_seconds
+        while self.hass.loop.time() < end:
+            payload = {
+                "name": "THERMOSTAT_COMMAND_1",
+                "instance": int(self._instance),
+                "dgn": "1FEF9",
+                "data": data_hex,
+            }
             await mqtt.async_publish(
                 self.hass,
-                self._command_topic,
+                topic,
                 json.dumps(payload),
                 qos=0,
                 retain=False,
             )
+            await asyncio.sleep(burst_interval)
 
-            self.async_write_ha_state()
+    async def async_set_fan_mode(self, fan_mode: str) -> None:
+        """Set fan profile via learned signatures."""
+        normalized = fan_mode.lower()
+        suffix = FAN_MODE_SIGNATURES.get(normalized)
+        if suffix is None:
+            return
+        await self._async_publish_signature(suffix)
+        self._attr_fan_mode = normalized
+        self.async_write_ha_state()
+
+    async def async_set_fan_profile(self, fan_profile: str) -> None:
+        """Entity service: set fan profile (auto/low/high)."""
+        await self.async_set_fan_mode(fan_profile)
+
+    async def async_step_temperature_up(self) -> None:
+        """Entity service: nudge target temp up by one learned step."""
+        await self._async_publish_signature(TEMP_UP_SUFFIX)
+
+    async def async_step_temperature_down(self) -> None:
+        """Entity service: nudge target temp down by one learned step."""
+        await self._async_publish_signature(TEMP_DOWN_SUFFIX)

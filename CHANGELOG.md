@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.3.0 - 2026-02-21
+
+- Added Mira/Firefly-focused HVAC command support in the custom component climate platform using learned `THERMOSTAT_COMMAND_1` signatures.
+- Added climate entity services:
+  - `step_temperature_up`
+  - `step_temperature_down`
+  - `set_fan_profile` (`auto|low|high`)
+- Added fan mode support (`auto/low/high`) to climate entities and mapped reported RV-C fan mode+speed into Home Assistant fan state.
+- Updated climate command path to publish signature bursts on `RVC/THERMOSTAT_COMMAND_1/<instance>` for better reliability under controller gating.
+- Updated `services.yaml` and bumped integration manifest version to `2.3.0`.
+
 ## 2.2.0 - 2026-02-13
 
 - Cut a standalone release for the refactored architecture so downstream installs can adopt the new flow without waiting for additional changes.

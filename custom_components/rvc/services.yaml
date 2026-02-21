@@ -27,3 +27,34 @@ ramp_down:
         number:
           min: 1
           max: 60
+
+step_temperature_up:
+  description: "Nudge RV-C thermostat up by one learned step (state-gated command path)."
+  fields:
+    entity_id:
+      description: "Target climate entity"
+      example: "climate.rvc_climate_0"
+
+step_temperature_down:
+  description: "Nudge RV-C thermostat down by one learned step (state-gated command path)."
+  fields:
+    entity_id:
+      description: "Target climate entity"
+      example: "climate.rvc_climate_0"
+
+set_fan_profile:
+  description: "Set RV-C fan profile using learned signatures."
+  fields:
+    entity_id:
+      description: "Target climate entity"
+      example: "climate.rvc_climate_0"
+    fan_profile:
+      description: "Fan profile to apply"
+      required: true
+      example: "low"
+      selector:
+        select:
+          options:
+            - auto
+            - low
+            - high
