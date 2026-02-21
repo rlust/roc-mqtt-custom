@@ -15,12 +15,37 @@ case "$ACTION" in
     ;;
 esac
 
-exec "$DIR/thermostat_action.sh" \
-  --instance "$INSTANCE" \
-  --delta "$DELTA" \
-  --confirm \
-  --retry 3 \
-  --retry-delay 2 \
-  --target any \
-  --burst-seconds 6 \
-  --burst-interval 0.35
+run_once() {
+  "$DIR/thermostat_action.sh" \
+    --instance "$INSTANCE" \
+    --delta "$DELTA" \
+    --confirm \
+    --retry 3 \
+    --retry-delay 2 \
+    --target any \
+    --burst-seconds 6 \
+    --burst-interval 0.35
+}
+
+echo "▶ Running thermostat $ACTION (instance $INSTANCE)..."
+out1="$(run_once 2>&1)"
+echo "$out1"
+
+if echo "$out1" | grep -q '"changed": true'; then
+  echo "✅ Applied without nudge."
+  exit 0
+fi
+
+echo "⚠️ No change detected."
+read -r -p "Open VegaTouch HVAC page, tap once (any temp nudge), then press Enter to retry... " _
+
+out2="$(run_once 2>&1)"
+echo "$out2"
+
+if echo "$out2" | grep -q '"changed": true'; then
+  echo "✅ Applied after nudge."
+  exit 0
+fi
+
+echo "❌ Still no change after nudge."
+exit 1
