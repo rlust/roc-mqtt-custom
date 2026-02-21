@@ -21,4 +21,6 @@ exec "$DIR/thermostat_action.sh" \
   --confirm \
   --retry 3 \
   --retry-delay 2 \
-  --target any
+  --target any \
+  --burst-seconds 6 \
+  --burst-interval 0.35

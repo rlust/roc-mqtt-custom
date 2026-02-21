@@ -150,9 +150,19 @@ def cmd_send_known(args):
     attempts = max(1, args.retry)
 
     for attempt in range(1, attempts + 1):
-        payload["timestamp"] = f"{time.time():.6f}"
-        publish(args.host, args.port, args.user, args.password, topic, payload)
-        print(f"published attempt={attempt}")
+        if args.burst_seconds > 0:
+            end_burst = time.time() + args.burst_seconds
+            sent = 0
+            while time.time() < end_burst:
+                payload["timestamp"] = f"{time.time():.6f}"
+                publish(args.host, args.port, args.user, args.password, topic, payload)
+                sent += 1
+                time.sleep(args.burst_interval)
+            print(f"published attempt={attempt} burst_sent={sent}")
+        else:
+            payload["timestamp"] = f"{time.time():.6f}"
+            publish(args.host, args.port, args.user, args.password, topic, payload)
+            print(f"published attempt={attempt}")
 
         if not args.confirm:
             continue
@@ -289,6 +299,8 @@ def main():
     p_known.add_argument("--retry", type=int, default=1, help="Attempts when --confirm is enabled")
     p_known.add_argument("--retry-delay", type=float, default=2.0, help="Seconds between retry attempts")
     p_known.add_argument("--target", choices=["any", "cool", "heat", "both"], default="any", help="Which setpoint(s) must move to count success")
+    p_known.add_argument("--burst-seconds", type=float, default=0.0, help="If >0, publish repeatedly for this duration per attempt")
+    p_known.add_argument("--burst-interval", type=float, default=0.35, help="Seconds between publishes during burst")
     p_known.add_argument("--auto-probe-on-fail", action="store_true", help="If confirm fails, run a broad MQTT probe capture")
     p_known.add_argument("--probe-seconds", type=float, default=20.0, help="Auto-probe capture duration in seconds")
     p_known.add_argument("--probe-out", default="captures/auto-probe-on-fail.jsonl", help="Auto-probe output JSONL path")
