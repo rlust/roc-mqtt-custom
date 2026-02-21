@@ -70,3 +70,4 @@ python3 tools/thermostat_command_helper.py capture --instance 0 --seconds 20 --o
 - Keep one-zone-at-a-time changes.
 - Space commands by >=2s.
 - If command publishes but no status delta, inspect downstream CAN transmitter filters.
+- See `tools/HVAC_FIELD_LEARNINGS.md` for verified signatures (setpoint + fan) and current gating behavior.
