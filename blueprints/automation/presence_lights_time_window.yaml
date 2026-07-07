@@ -1,0 +1,102 @@
+blueprint:
+  name: Presence → Lights with Time Window
+  description: >
+    Turn lights on when presence/motion is detected and off after the area
+    has been clear for a set delay, but only within a daily time window.
+    Windows that cross midnight (e.g. after 07:00, before 01:00) work.
+    Used at both the Newark house and the coach so the pattern stays
+    identical everywhere.
+  author: Randy Lust
+  domain: automation
+  input:
+    occupancy_entity:
+      name: Presence / motion sensor(s)
+      description: Any of these turning on counts as presence.
+      selector:
+        entity:
+          multiple: true
+          filter:
+            domain: binary_sensor
+            device_class:
+              - motion
+              - occupancy
+              - presence
+    light_target:
+      name: Lights
+      description: Lights to control.
+      selector:
+        target:
+          entity:
+            domain: light
+    brightness_pct:
+      name: Brightness
+      description: Brightness when turning on (ignored by non-dimmable lights).
+      default: 100
+      selector:
+        number:
+          min: 1
+          max: 100
+          unit_of_measurement: "%"
+    off_delay:
+      name: Off delay
+      description: How long the area must be clear before lights turn off.
+      default:
+        minutes: 8
+      selector:
+        duration: {}
+    time_after:
+      name: Window start
+      description: Lights only turn on after this time.
+      default: "00:00:00"
+      selector:
+        time: {}
+    time_before:
+      name: Window end
+      description: >
+        Lights only turn on before this time. Set earlier than the start
+        time to span midnight (e.g. start 07:00, end 01:00 means dormant
+        only from 01:00 to 07:00).
+      default: "23:59:59"
+      selector:
+        time: {}
+
+# Restart mode: re-detected presence during the clear-delay restarts the
+# cycle, which is the correct behavior for motion lights.
+mode: restart
+max_exceeded: silent
+
+triggers:
+  - trigger: state
+    entity_id: !input occupancy_entity
+    to: "on"
+    id: detected
+  - trigger: state
+    entity_id: !input occupancy_entity
+    to: "off"
+    for: !input off_delay
+    id: cleared
+
+actions:
+  - choose:
+      - conditions:
+          # Time window gates only the turn-ON branch. Turn-off always
+          # runs, so a light switched on just before the window closes
+          # still turns off when the area clears.
+          - condition: trigger
+            id:
+              - detected
+          - condition: time
+            after: !input time_after
+            before: !input time_before
+        sequence:
+          - action: light.turn_on
+            target: !input light_target
+            data:
+              brightness_pct: !input brightness_pct
+      - conditions:
+          - condition: trigger
+            id:
+              - cleared
+        sequence:
+          - action: light.turn_off
+            target: !input light_target
