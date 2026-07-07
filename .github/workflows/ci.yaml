@@ -12,9 +12,25 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
       - name: Install tools
-        run: |
-          pip install flake8
+        run: pip install ruff
       - name: Lint
-        run: flake8 custom_components/rvc
+        run: ruff check custom_components/rvc tests
+      - name: Validate manifest & hacs.json
+        run: |
+          python -c "import json; json.load(open('custom_components/rvc/manifest.json'))"
+          python -c "import json; json.load(open('hacs.json'))"
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install tools
+        run: pip install pytest
+      - name: Run tests
+        run: pytest tests/ -v

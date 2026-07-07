@@ -1,7 +1,7 @@
 """RV-C button platform for momentary actions (e.g., generator start/stop)."""
 from __future__ import annotations
 
-from typing import Any
+import logging
 
 from homeassistant.components import mqtt
 from homeassistant.components.button import ButtonEntity
@@ -12,22 +12,19 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_call_later
 
 from .const import (
+    BUTTON_DEFINITIONS,
     CONF_COMMAND_TOPIC,
     CONF_TOPIC_PREFIX,
     DEFAULT_COMMAND_TOPIC,
     DEFAULT_TOPIC_PREFIX,
     DOMAIN,
-    BUTTON_DEFINITIONS,
     LOCK_DEFINITIONS,
 )
-
-import logging
+from .helpers import get_entry_option as _get_entry_option
 
 _LOGGER = logging.getLogger(__name__)
 
 
-def _get_entry_option(entry: ConfigEntry, key: str, default: Any) -> Any:
-    return entry.options.get(key, entry.data.get(key, default))
 
 
 async def async_setup_entry(

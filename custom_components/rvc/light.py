@@ -5,13 +5,12 @@ import logging
 from typing import Any
 
 import voluptuous as vol
-
+from homeassistant.components import mqtt
 from homeassistant.components.light import (
     ATTR_BRIGHTNESS,
     ColorMode,
     LightEntity,
 )
-from homeassistant.components import mqtt
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import STATE_OFF, STATE_ON
 from homeassistant.core import HomeAssistant
@@ -23,36 +22,28 @@ from homeassistant.helpers.restore_state import RestoreEntity
 
 from .availability import AvailabilityMixin
 from .const import (
+    BATHROOM_AREA_LIGHTS,
+    BEDROOM_AREA_LIGHTS,
     CONF_AVAILABILITY_TIMEOUT,
     CONF_COMMAND_TOPIC,
     CONF_TOPIC_PREFIX,
-    DEFAULT_LIGHT_AVAILABILITY_TIMEOUT,
     DEFAULT_COMMAND_TOPIC,
+    DEFAULT_LIGHT_AVAILABILITY_TIMEOUT,
     DEFAULT_TOPIC_PREFIX,
-    DOMAIN,
-    SIGNAL_DISCOVERY,
-    DIMMER_INSTANCE_LABELS,
     DIMMABLE_LIGHTS,
-    LIVING_AREA_LIGHTS,
-    BEDROOM_AREA_LIGHTS,
-    BATHROOM_AREA_LIGHTS,
+    DIMMER_INSTANCE_LABELS,
+    DOMAIN,
     EXTERIOR_AREA_LIGHTS,
+    LIVING_AREA_LIGHTS,
+    SIGNAL_DISCOVERY,
 )
+from .helpers import coerce_int as _coerce_int
+from .helpers import get_entry_option as _get_entry_option
 
 _LOGGER = logging.getLogger(__name__)
 
 
 
-def _get_entry_option(entry: ConfigEntry, key: str, default: Any) -> Any:
-    """Helper to read config values from options first, then data."""
-    return entry.options.get(key, entry.data.get(key, default))
-
-
-def _coerce_int(value: Any, fallback: int) -> int:
-    try:
-        return max(0, int(value))
-    except (TypeError, ValueError):
-        return fallback
 
 
 def _duration_schema(min_seconds: int = 1, max_seconds: int = 60) -> vol.Schema:

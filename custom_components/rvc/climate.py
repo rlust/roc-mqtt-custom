@@ -6,19 +6,18 @@ import json
 from typing import Any
 
 import voluptuous as vol
-
+from homeassistant.components import mqtt
 from homeassistant.components.climate import ClimateEntity
 from homeassistant.components.climate.const import (
-    HVACMode,
     ClimateEntityFeature,
+    HVACMode,
 )
-from homeassistant.const import UnitOfTemperature
-from homeassistant.components import mqtt
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import UnitOfTemperature
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_platform
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
-from homeassistant.helpers import entity_platform
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
@@ -31,26 +30,30 @@ from .const import (
     DOMAIN,
     SIGNAL_DISCOVERY,
 )
+from .helpers import coerce_int as _coerce_int
+from .helpers import get_entry_option as _get_entry_option
 
-
-def _get_entry_option(entry: ConfigEntry, key: str, default: Any) -> Any:
-    """Helper to read config values from options first, then data."""
-    return entry.options.get(key, entry.data.get(key, default))
-
-
-def _coerce_int(value: Any, fallback: int) -> int:
-    try:
-        return max(0, int(value))
-    except (TypeError, ValueError):
-        return fallback
-
-
-# Learned Mira thermostat command signatures (instance byte is prepended)
-TEMP_UP_SUFFIX = "FFFFFFFFFAFFFF"
-TEMP_DOWN_SUFFIX = "FFFFFFFFF9FFFF"
-FAN_HIGH_SUFFIX = "DFC8FFFFFFFFFF"
-FAN_LOW_SUFFIX = "DF64FFFFFFFFFF"
-FAN_AUTO_SUFFIX = "CFFFFFFFFFFFFF"
+# RV-C THERMOSTAT_COMMAND_1 (DGN 1FEF9) signatures for the Mira/Aspire panel,
+# captured by sniffing the CAN bus while pressing the physical thermostat
+# buttons (see tools/HVAC_FIELD_LEARNINGS.md and thermostat_pgn_map_aspire.json).
+#
+# Each value is the last 7 bytes of the 8-byte data payload as hex; the first
+# byte (thermostat instance) is prepended at publish time by
+# _async_publish_signature(). Byte layout per the RV-C spec:
+#   byte 0: instance          byte 1: operating mode / schedule mode bits
+#   byte 2: fan mode + speed  bytes 3-4: setpoint heat (0.03125 degC/bit)
+#   bytes 5-6: setpoint cool  byte 7: reserved (0xFF)
+# 0xFF in a field means "no change" - these signatures only touch the field
+# they intend to change, which is why most bytes are FF.
+#
+# To recalibrate for a different thermostat: run tools/ac_status_watch.py,
+# press the button on the physical panel, and copy the payload bytes seen on
+# {prefix}/status/climate. Update the constants below to match.
+TEMP_UP_SUFFIX = "FFFFFFFFFAFFFF"    # bump cool setpoint up one step
+TEMP_DOWN_SUFFIX = "FFFFFFFFF9FFFF"  # bump cool setpoint down one step
+FAN_HIGH_SUFFIX = "DFC8FFFFFFFFFF"   # fan manual, speed 0xC8 (100%)
+FAN_LOW_SUFFIX = "DF64FFFFFFFFFF"    # fan manual, speed 0x64 (50%)
+FAN_AUTO_SUFFIX = "CFFFFFFFFFFFFF"   # fan auto (speed field ignored)
 
 FAN_MODE_SIGNATURES: dict[str, str] = {
     "high": FAN_HIGH_SUFFIX,

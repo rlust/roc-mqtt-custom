@@ -3,9 +3,9 @@ from __future__ import annotations
 
 from typing import Any
 
+import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.core import callback
-import voluptuous as vol
 
 from .const import (
     CONF_AUTO_DISCOVERY,

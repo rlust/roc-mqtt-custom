@@ -1,8 +1,8 @@
 """Helpers for entity availability tracking."""
 from __future__ import annotations
 
-from datetime import timedelta
 import time
+from datetime import timedelta
 
 from homeassistant.core import CALLBACK_TYPE, callback
 from homeassistant.helpers.event import async_track_time_interval

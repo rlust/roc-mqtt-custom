@@ -1,6 +1,7 @@
 """RV-C switch platform for relay-style loads."""
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from homeassistant.components import mqtt
@@ -17,28 +18,19 @@ from .const import (
     CONF_AVAILABILITY_TIMEOUT,
     CONF_COMMAND_TOPIC,
     CONF_TOPIC_PREFIX,
-    DEFAULT_SWITCH_AVAILABILITY_TIMEOUT,
     DEFAULT_COMMAND_TOPIC,
+    DEFAULT_SWITCH_AVAILABILITY_TIMEOUT,
     DEFAULT_TOPIC_PREFIX,
     DOMAIN,
     SIGNAL_DISCOVERY,
     SWITCH_DEFINITIONS,
 )
-
-import logging
+from .helpers import coerce_int as _coerce_int
+from .helpers import get_entry_option as _get_entry_option
 
 _LOGGER = logging.getLogger(__name__)
 
 
-def _get_entry_option(entry: ConfigEntry, key: str, default: Any) -> Any:
-    return entry.options.get(key, entry.data.get(key, default))
-
-
-def _coerce_int(value: Any, fallback: int) -> int:
-    try:
-        return max(0, int(value))
-    except (TypeError, ValueError):
-        return fallback
 
 
 def _instances() -> dict[str, dict[str, str]]:

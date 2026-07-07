@@ -23,6 +23,14 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 
+def _coerce_float(value: Any) -> float | None:
+    """Return ``value`` as float, or None if it is not numeric."""
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 class RVCMQTTHandler:
     """Central MQTT listener and dispatcher for RV-C."""
 
@@ -86,17 +94,33 @@ class RVCMQTTHandler:
 
         try:
             payload = json.loads(msg.payload)
-        except json.JSONDecodeError:
+        except (json.JSONDecodeError, TypeError):
             _LOGGER.warning("RVC MQTT: invalid JSON payload on %s: %s", msg.topic, msg.payload)
+            return
+
+        if not isinstance(payload, dict):
+            _LOGGER.warning(
+                "RVC MQTT: expected JSON object on %s, got %s - skipping",
+                msg.topic,
+                type(payload).__name__,
+            )
             return
 
         # Special handling for GPS data (CP/GPSDATA topic)
         if "GPSDATA" in msg.topic:
+            lat, lon = _coerce_float(payload.get("lat")), _coerce_float(payload.get("lon"))
+            if lat is None or lon is None:
+                _LOGGER.warning(
+                    "RVC MQTT: GPS payload on %s missing numeric lat/lon (keys=%s) - skipping",
+                    msg.topic,
+                    list(payload.keys()),
+                )
+                return
             _LOGGER.info(
                 "RVC MQTT: GPS data received on %s - lat=%.6f, lon=%.6f",
                 msg.topic,
-                payload.get("lat", 0),
-                payload.get("lon", 0),
+                lat,
+                lon,
             )
             discovery = {
                 "type": "device_tracker",

@@ -4,22 +4,22 @@ from __future__ import annotations
 from typing import Any
 
 from homeassistant.components.sensor import (
-    SensorEntity,
     SensorDeviceClass,
+    SensorEntity,
     SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import (
+    PERCENTAGE,
+    UnitOfElectricCurrent,
+    UnitOfElectricPotential,
+    UnitOfFrequency,
+    UnitOfTemperature,
+)
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.const import (
-    UnitOfTemperature,
-    UnitOfElectricPotential,
-    UnitOfElectricCurrent,
-    UnitOfFrequency,
-    PERCENTAGE,
-)
 
 from .const import DOMAIN, SIGNAL_DISCOVERY
 

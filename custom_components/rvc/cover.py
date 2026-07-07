@@ -6,12 +6,12 @@ import logging
 import time
 from typing import Any
 
+from homeassistant.components import mqtt
 from homeassistant.components.cover import (
+    CoverDeviceClass,
     CoverEntity,
     CoverEntityFeature,
-    CoverDeviceClass,
 )
-from homeassistant.components import mqtt
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
@@ -20,17 +20,19 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .availability import AvailabilityMixin
 from .const import (
+    AWNING_DEFINITIONS,
     CONF_AVAILABILITY_TIMEOUT,
     CONF_COMMAND_TOPIC,
     CONF_TOPIC_PREFIX,
-    DEFAULT_COVER_AVAILABILITY_TIMEOUT,
     DEFAULT_COMMAND_TOPIC,
+    DEFAULT_COVER_AVAILABILITY_TIMEOUT,
     DEFAULT_TOPIC_PREFIX,
     DOMAIN,
     SIGNAL_DISCOVERY,
-    AWNING_DEFINITIONS,
     SLIDE_DEFINITIONS,
 )
+from .helpers import coerce_int as _coerce_int
+from .helpers import get_entry_option as _get_entry_option
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -43,16 +45,6 @@ _COMMAND_DEFINITIONS = {
 }
 
 
-def _get_entry_option(entry: ConfigEntry, key: str, default: Any) -> Any:
-    """Helper to read config values from options first, then data."""
-    return entry.options.get(key, entry.data.get(key, default))
-
-
-def _coerce_int(value: Any, fallback: int) -> int:
-    try:
-        return max(0, int(value))
-    except (TypeError, ValueError):
-        return fallback
 
 
 async def _publish_cover_command(
