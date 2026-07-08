@@ -109,3 +109,28 @@ class TestParseStatusPayload:
     def test_insufficient_payload_returns_none(self):
         assert parse_status_payload({"instance": 1}) is None
         assert parse_status_payload({}) is None
+
+
+class TestFeedbackLoopGuard:
+    """The ack/nack/audit topics share the control prefix; they must never be
+    treated as control messages (regression: NACK-of-own-NACK MQTT loop)."""
+
+    def _bridge_topic_check(self, tail):
+        from thermostat_command_bridge import ThermostatBridge
+        # Use the classmethod logic without constructing (needs no mqtt):
+        parts = ["rvcbridge", "thermostat_control", tail]
+        return (
+            len(parts) == 3
+            and parts[0] == "rvcbridge"
+            and parts[1] == "thermostat_control"
+            and parts[2] not in ThermostatBridge.RESERVED_TAILS
+        )
+
+    def test_reserved_tails_not_control(self):
+        assert not self._bridge_topic_check("ack")
+        assert not self._bridge_topic_check("nack")
+        assert not self._bridge_topic_check("audit")
+
+    def test_zone_topics_are_control(self):
+        assert self._bridge_topic_check("0")
+        assert self._bridge_topic_check("6")

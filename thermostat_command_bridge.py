@@ -326,9 +326,20 @@ class ThermostatBridge:
         else:
             self.handle_status(topic, payload)
 
+    # Feedback topics share the control prefix (rvcbridge/thermostat_control/ack
+    # etc.), so the control wildcard subscription also receives our own acks.
+    # These tails must be ignored silently -- publishing a NACK about them
+    # would create an MQTT feedback loop (NACK -> control handler -> NACK...).
+    RESERVED_TAILS = frozenset({"ack", "nack", "audit"})
+
     def _is_control_topic(self, topic: str) -> bool:
         parts = topic.split("/")
-        return len(parts) == 3 and parts[0] == "rvcbridge" and parts[1] == "thermostat_control"
+        return (
+            len(parts) == 3
+            and parts[0] == "rvcbridge"
+            and parts[1] == "thermostat_control"
+            and parts[2] not in self.RESERVED_TAILS
+        )
 
     def handle_status(self, topic: str, payload: dict) -> None:
         fields = parse_status_payload(payload)
@@ -373,7 +384,9 @@ class ThermostatBridge:
         now = time.time()
         tail = topic.rsplit("/", 1)[-1]
         if not tail.isdigit():
-            self.publish_nack("bad_instance", topic, payload)
+            # Never NACK here: a non-numeric tail may be our own feedback
+            # topic or another consumer's -- responding would risk a loop.
+            print(f"ignoring non-instance control topic: {topic}")
             return
         instance = int(tail)
 
