@@ -176,14 +176,16 @@ def resolve_command(payload: dict, current: ZoneState, limits: Limits) -> Tuple[
         resolved["operating_mode"] = mode
         changed = True
 
-    if (fan_req := payload.get("fan_mode")) is not None:
+    fan_req = payload.get("fan_mode")
+    if fan_req is not None:
         fan = cu.fan_mode_to_raw(fan_req)
         if fan is None:
             return None, f"bad_fan_mode:{fan_req}"
         resolved["fan_mode"] = fan
         changed = True
 
-    if (fs := payload.get("fan_speed_pct", payload.get("fan_speed"))) is not None:
+    fs = payload.get("fan_speed_pct", payload.get("fan_speed"))
+    if fs is not None:
         try:
             fs_i = int(fs)
         except (TypeError, ValueError):
@@ -193,7 +195,8 @@ def resolve_command(payload: dict, current: ZoneState, limits: Limits) -> Tuple[
         resolved["fan_speed_raw"] = cu.pct_to_halfpct(fs_i)
         changed = True
 
-    if (sched := payload.get("schedule_mode")) is not None:
+    sched = payload.get("schedule_mode")
+    if sched is not None:
         try:
             resolved["schedule_mode"] = int(sched) & 0x03
             changed = True
