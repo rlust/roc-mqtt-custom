@@ -1,5 +1,28 @@
 # Changelog
 
+## v2.5.0 (2026-07-08) — Aqua-Hot control + heat zones
+
+### Added
+- **Heat-zone climate entities** (instances 3–6): Front Heat (Aqua-Hot),
+  Rear Heat (Aqua-Hot), Bay Heat (Aqua-Hot), Floor Heat. Heat-only cards
+  (off/heat, no fan); target temperature writes `setpoint_heat_f` through the
+  bridge, preserving the zone's cool setpoint.
+- **Aqua-Hot Electric / Burner switches** (AC loads 212/210), created when
+  Thermostat bridge mode is enabled. Commands go via AC_LOAD_COMMAND
+  (0x1FFBE, arb 0x19FFBEF9); state from AC_LOAD_STATUS with **shed
+  detection** (level 0xFC/0xFD = requested but shed by the energy manager,
+  exposed as a `shed` attribute).
+- Bridge: `rvcbridge/acload_control/<instance>` topic with
+  `{"state": "on"|"off"}` payloads; instances restricted to profile
+  `safety.allowed_acload_instances` (default 210, 212); rate-limited and
+  audited like zone commands. New `--acload-control-topic` CLI flag.
+- 6 new tests (55 total).
+
+### Notes
+- WATERHEATER_COMMAND (1FFF6) is deliberately NOT used — the Firefly G6
+  ignores it (verified in CoachIQ). OFF latches; ON is a request the energy
+  manager may shed.
+
 ## v2.4.0 (2026-07-08) — Thermostat control rewrite (CoachIQ findings)
 
 Cross-checked our THERMOSTAT_COMMAND_1 path against the CoachIQ project

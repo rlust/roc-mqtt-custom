@@ -134,3 +134,40 @@ class TestFeedbackLoopGuard:
     def test_zone_topics_are_control(self):
         assert self._bridge_topic_check("0")
         assert self._bridge_topic_check("6")
+
+
+class TestAcLoadCommand:
+    """AC_LOAD_COMMAND (Aqua-Hot burner/electric) support, per CoachIQ wire
+    verification: [inst, 0xFF, level, 0xC0, 0,0,0,0], arb 0x19FFBEF9."""
+
+    def test_resolve_on_off(self):
+        from thermostat_command_bridge import resolve_acload_level
+        assert resolve_acload_level({"state": "on"}) == (0xC8, "ok")
+        assert resolve_acload_level({"state": "off"}) == (0x00, "ok")
+        assert resolve_acload_level({"command": "on"}) == (0xC8, "ok")
+
+    def test_resolve_level_pct(self):
+        from thermostat_command_bridge import resolve_acload_level
+        assert resolve_acload_level({"level_pct": 100}) == (0xC8, "ok")
+        assert resolve_acload_level({"level_pct": 0}) == (0x00, "ok")
+
+    def test_resolve_rejects_garbage(self):
+        from thermostat_command_bridge import resolve_acload_level
+        level, reason = resolve_acload_level({"state": "maybe"})
+        assert level is None and reason.startswith("bad_state")
+        level, reason = resolve_acload_level({})
+        assert level is None and reason == "no_recognized_fields"
+
+    def test_frame_bytes(self):
+        data = cu.build_ac_load_command_payload(212, cu.AC_LOAD_LEVEL_ON)
+        assert data == bytes([0xD4, 0xFF, 0xC8, 0xC0, 0, 0, 0, 0])
+        data = cu.build_ac_load_command_payload(210, cu.AC_LOAD_LEVEL_OFF)
+        assert data == bytes([0xD2, 0xFF, 0x00, 0xC0, 0, 0, 0, 0])
+
+    def test_arbitration_id(self):
+        assert cu.rvc_arbitration_id(cu.AC_LOAD_COMMAND_PGN, 0xF9, 6) == 0x19FFBEF9
+
+    def test_shed_levels(self):
+        assert 0xFD in cu.AC_LOAD_SHED_LEVELS
+        assert 0xFC in cu.AC_LOAD_SHED_LEVELS
+        assert 0xC8 not in cu.AC_LOAD_SHED_LEVELS

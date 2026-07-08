@@ -243,6 +243,25 @@ def resolve_command(payload: dict, current: ZoneState, limits: Limits) -> Tuple[
     return resolved, "ok"
 
 
+def resolve_acload_level(payload: dict):
+    """Resolve an AC-load command payload to a raw level (0-200)."""
+    state = payload.get("state", payload.get("command"))
+    if state is not None:
+        st = str(state).strip().lower()
+        if st in ("on", "1", "true"):
+            return cu.AC_LOAD_LEVEL_ON, "ok"
+        if st in ("off", "0", "false"):
+            return cu.AC_LOAD_LEVEL_OFF, "ok"
+        return None, f"bad_state:{state}"
+    pct = payload.get("level_pct")
+    if pct is not None:
+        try:
+            return cu.pct_to_halfpct(int(pct)), "ok"
+        except (TypeError, ValueError):
+            return None, f"bad_level_pct:{pct}"
+    return None, "no_recognized_fields"
+
+
 class ThermostatBridge:
     def __init__(self, args: argparse.Namespace):
         self.args = args
@@ -301,6 +320,7 @@ class ThermostatBridge:
             return
         control_topic = self.profile["default_topics"]["control"]
         client.subscribe(control_topic)
+        client.subscribe(self.args.acload_control_topic + "/+")
         for t in self.args.status_topics:
             client.subscribe(t)
         print(f"✅ MQTT connected; control={control_topic} status={list(self.args.status_topics)}")
@@ -323,6 +343,8 @@ class ThermostatBridge:
 
         if self._is_control_topic(topic):
             self.handle_control(topic, payload)
+        elif self._is_acload_control_topic(topic):
+            self.handle_acload_control(topic, payload)
         else:
             self.handle_status(topic, payload)
 
@@ -340,6 +362,91 @@ class ThermostatBridge:
             and parts[1] == "thermostat_control"
             and parts[2] not in self.RESERVED_TAILS
         )
+
+    def _is_acload_control_topic(self, topic: str) -> bool:
+        parts = topic.split("/")
+        return (
+            len(parts) == 3
+            and "/".join(parts[:2]) == self.args.acload_control_topic
+            and parts[2] not in self.RESERVED_TAILS
+        )
+
+    # ------------------------------------------------------------- AC loads
+
+    def handle_acload_control(self, topic: str, payload: dict) -> None:
+        """
+        Command an energy-managed AC load (AC_LOAD_COMMAND, 0x1FFBE).
+        Payload: {"state": "on"|"off"} or {"level_pct": 0-100}.
+        Restricted to profile safety.allowed_acload_instances (Aqua-Hot
+        electric=212 and burner=210 by default). OFF latches; ON is a
+        request the G6 energy manager may shed (status level 0xFC/0xFD).
+        """
+        now = time.time()
+        tail = topic.rsplit("/", 1)[-1]
+        if not tail.isdigit():
+            print(f"ignoring non-instance acload topic: {topic}")
+            return
+        instance = int(tail)
+
+        allowed = self.profile.get("safety", {}).get("allowed_acload_instances", [210, 212])
+        if instance not in allowed:
+            self.publish_nack(f"acload_instance_not_allowed:{instance}", topic, payload)
+            return
+
+        key = 10000 + instance  # separate rate-limit namespace from zones
+        last = self.last_sent_by_instance.get(key)
+        if last and (now - last) < self.min_interval_s:
+            self.publish_nack(f"rate_limited_acload:{instance}", topic, payload)
+            return
+
+        level, reason = resolve_acload_level(payload)
+        if level is None:
+            self.publish_nack(reason, topic, payload)
+            return
+
+        data = cu.build_ac_load_command_payload(instance, level)
+        arbitration_id = cu.rvc_arbitration_id(cu.AC_LOAD_COMMAND_PGN, self.source_address, self.priority)
+        frame = {
+            "kind": "acload",
+            "pgn": cu.AC_LOAD_COMMAND_PGN,
+            "pgn_hex": f"0x{cu.AC_LOAD_COMMAND_PGN:05X}",
+            "arbitration_id": arbitration_id,
+            "arbitration_id_hex": f"0x{arbitration_id:08X}",
+            "instance": instance,
+            "data": list(data),
+            "data_hex": data.hex().upper(),
+            "level": level,
+        }
+        self.publish_audit(topic, payload, frame)
+
+        if not self.tx_enabled:
+            self.publish_ack("monitor_only", topic, payload, frame)
+            return
+
+        self.last_sent_by_instance[key] = now
+        sent, status = self._tx(frame)
+        self.publish_ack(status, topic, payload, frame)
+
+    def _tx(self, frame: dict) -> tuple:
+        """Low-level transmit shared by zone and AC-load frames."""
+        if self.args.dry_run or self.can_bus is None:
+            print(
+                f"🧪 DRY/LOG TX {frame['arbitration_id_hex']} "
+                f"({frame['pgn_hex']}) data={frame['data_hex']}"
+            )
+            return (False, "logged_only")
+        try:
+            msg = can.Message(
+                arbitration_id=frame["arbitration_id"],
+                data=frame["data"],
+                is_extended_id=True,
+            )
+            self.can_bus.send(msg)
+            print(f"✅ CAN TX {frame['arbitration_id_hex']} data={frame['data_hex']}")
+            return (True, "sent")
+        except Exception as e:
+            print(f"❌ CAN send failed: {e}")
+            return (False, "send_failed")
 
     def handle_status(self, topic: str, payload: dict) -> None:
         fields = parse_status_payload(payload)
@@ -577,6 +684,10 @@ def parse_args(argv=None) -> argparse.Namespace:
         help="Seconds to wait for a status echo before dropping confirmation tracking",
     )
 
+    p.add_argument(
+        "--acload-control-topic", default="rvcbridge/acload_control",
+        help="MQTT topic prefix for AC load (Aqua-Hot) commands",
+    )
     p.add_argument("--handoff", action="store_true", help="Publish prebuilt frames to MQTT instead of CAN TX")
     p.add_argument("--handoff-topic", default="RVC/THERMOSTAT_COMMAND_1/{instance}")
     return p.parse_args(argv)

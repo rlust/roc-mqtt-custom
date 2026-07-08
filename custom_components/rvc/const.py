@@ -23,6 +23,23 @@ DEFAULT_AVAILABILITY_TIMEOUT = 300  # seconds
 # instead of the legacy learned-signature burst.
 DEFAULT_THERMOSTAT_BRIDGE_MODE = False
 DEFAULT_THERMOSTAT_BRIDGE_TOPIC = "rvcbridge/thermostat_control"
+DEFAULT_ACLOAD_BRIDGE_TOPIC = "rvcbridge/acload_control"
+
+# Heat-only thermostat zones (Aqua-Hot hydronic + floor heat) on the Aspire.
+# THERMOSTAT_STATUS_1/COMMAND_1 instances; no compressor, no fan.
+HEAT_ZONE_NAMES: dict[str, str] = {
+    "3": "Front Heat (Aqua-Hot)",
+    "4": "Rear Heat (Aqua-Hot)",
+    "5": "Bay Heat (Aqua-Hot)",
+    "6": "Floor Heat",
+}
+
+# Aqua-Hot energy-managed AC loads (AC_LOAD_COMMAND/STATUS instances).
+# ON is a request the Firefly energy manager may shed; OFF latches.
+AQUA_HOT_LOAD_DEFINITIONS: dict[str, dict[str, str]] = {
+    "aqua_hot_electric": {"name": "Aqua-Hot Electric", "instance": "212"},
+    "aqua_hot_burner": {"name": "Aqua-Hot Burner", "instance": "210"},
+}
 DEFAULT_LIGHT_AVAILABILITY_TIMEOUT = 0
 DEFAULT_SWITCH_AVAILABILITY_TIMEOUT = 0
 DEFAULT_LOCK_AVAILABILITY_TIMEOUT = 0

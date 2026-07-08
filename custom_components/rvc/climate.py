@@ -32,6 +32,7 @@ from .const import (
     DEFAULT_THERMOSTAT_BRIDGE_TOPIC,
     DEFAULT_TOPIC_PREFIX,
     DOMAIN,
+    HEAT_ZONE_NAMES,
     SIGNAL_DISCOVERY,
 )
 from .helpers import coerce_int as _coerce_int
@@ -96,9 +97,14 @@ async def async_setup_entry(
         except (TypeError, ValueError):
             return
 
+        heat_only = False
         if raw_name.startswith("THERMOSTAT_STATUS_1") or raw_name.startswith("THERMOSTAT_COMMAND_1"):
             if raw_instance in (0, 1, 2):
                 mapped_instance = str(raw_instance)
+            elif str(raw_instance) in HEAT_ZONE_NAMES:
+                # Aqua-Hot / floor heat zones: heat-only, no compressor or fan
+                mapped_instance = str(raw_instance)
+                heat_only = True
         elif raw_name.startswith("AIR_CONDITIONER_STATUS") or raw_name.startswith("AIR_CONDITIONER_COMMAND"):
             if raw_instance in (1, 2, 3):
                 mapped_instance = str(raw_instance - 1)
@@ -107,7 +113,7 @@ async def async_setup_entry(
             # Ignore non-zone climate-like instances (ex: 81) to avoid bogus entities.
             return
 
-        zone_names = {"0": "AC Front", "1": "AC Mid", "2": "AC Rear"}
+        zone_names = {"0": "AC Front", "1": "AC Mid", "2": "AC Rear", **HEAT_ZONE_NAMES}
         name = zone_names.get(mapped_instance, f"RVC Climate {mapped_instance}")
 
         entity = entities.get(mapped_instance)
@@ -127,6 +133,7 @@ async def async_setup_entry(
                         entry, CONF_THERMOSTAT_BRIDGE_TOPIC, DEFAULT_THERMOSTAT_BRIDGE_TOPIC
                     )
                 ),
+                heat_only=heat_only,
             )
             entities[mapped_instance] = entity
             async_add_entities([entity])
@@ -161,10 +168,18 @@ class RVCClimate(AvailabilityMixin, RestoreEntity, ClimateEntity):
         availability_timeout: int,
         bridge_mode: bool = DEFAULT_THERMOSTAT_BRIDGE_MODE,
         bridge_topic: str = DEFAULT_THERMOSTAT_BRIDGE_TOPIC,
+        heat_only: bool = False,
     ) -> None:
         AvailabilityMixin.__init__(self, availability_timeout)
         self._bridge_mode = bridge_mode
         self._bridge_topic = bridge_topic
+        self._heat_only = heat_only
+        if heat_only:
+            # Aqua-Hot / floor heat: setpoint + off/heat only, no fan.
+            self._attr_supported_features = ClimateEntityFeature.TARGET_TEMPERATURE
+            self._attr_hvac_modes = [HVACMode.OFF, HVACMode.HEAT]
+            self._attr_fan_modes = None
+            self._attr_hvac_mode = HVACMode.HEAT
         self._attr_name = name
         self._attr_has_entity_name = False  # Use our name as-is
         self._instance = instance_id
@@ -288,15 +303,16 @@ class RVCClimate(AvailabilityMixin, RestoreEntity, ClimateEntity):
             except (TypeError, ValueError):
                 pass
 
-        # Target temperature mapping
+        # Target temperature mapping (heat-only zones track the heat setpoint)
+        target_key = "setpoint temp heat F" if self._heat_only else "setpoint temp cool F"
         if "target_temperature" in payload:
             try:
                 self._attr_target_temperature = float(payload["target_temperature"])
             except (TypeError, ValueError):
                 pass
-        elif "setpoint temp cool F" in payload:
+        elif target_key in payload:
             try:
-                self._attr_target_temperature = float(payload["setpoint temp cool F"])
+                self._attr_target_temperature = float(payload[target_key])
             except (TypeError, ValueError):
                 pass
 
@@ -404,8 +420,10 @@ class RVCClimate(AvailabilityMixin, RestoreEntity, ClimateEntity):
             if self._bridge_mode:
                 # Absolute write: the bridge fills mode/fan from live zone
                 # state, so this changes ONLY the setpoint (heat + cool in
-                # lockstep, matching Firefly G6 behavior).
-                await self._async_publish_bridge_command({"setpoint_f": requested})
+                # lockstep, matching Firefly G6 behavior). Heat-only zones
+                # write just the heat setpoint, preserving the cool value.
+                key = "setpoint_heat_f" if self._heat_only else "setpoint_f"
+                await self._async_publish_bridge_command({key: requested})
             elif requested > current:
                 await self._async_publish_signature(TEMP_UP_SUFFIX)
             elif requested < current:

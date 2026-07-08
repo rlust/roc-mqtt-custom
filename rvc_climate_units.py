@@ -172,3 +172,27 @@ THERMOSTAT_COMMAND_1_PGN = 0x1FEF9
 THERMOSTAT_STATUS_1_PGN = 0x1FFE2
 DEFAULT_SOURCE_ADDRESS = 0xF9  # matches CoachIQ's verified-accepted SA
 DEFAULT_PRIORITY = 6
+
+
+# ---------------------------------------------------------------- AC loads
+# AC_LOAD_COMMAND / AC_LOAD_STATUS (1FFBE / 1FFBF): energy-managed AC loads.
+# On the Entegra Aspire the Aqua-Hot electric element (instance 212 / 0xD4)
+# and burner (instance 210 / 0xD2) are controlled this way -- NOT via
+# WATERHEATER_COMMAND, which the Firefly G6 ignores (verified in CoachIQ).
+# Level is half-percent: 0xC8 = on/100%, 0x00 = off. While the energy manager
+# sheds a requested-on load, status byte 2 reads 0xFD (0xFC = load delay);
+# both mean "requested but not energized".
+
+AC_LOAD_COMMAND_PGN = 0x1FFBE
+AC_LOAD_STATUS_PGN = 0x1FFBF
+AC_LOAD_LEVEL_ON = 0xC8
+AC_LOAD_LEVEL_OFF = 0x00
+AC_LOAD_SHED_LEVELS = frozenset({0xFC, 0xFD})
+
+
+def build_ac_load_command_payload(instance: int, level: int) -> bytes:
+    """
+    AC_LOAD_COMMAND (0x1FFBE) 8-byte payload, mirroring the frame the G6
+    emits: [instance, group 0xFF, level, priority 0xC0, 0, 0, 0, 0].
+    """
+    return bytes([instance & 0xFF, 0xFF, level & 0xFF, 0xC0, 0x00, 0x00, 0x00, 0x00])

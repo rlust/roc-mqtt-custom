@@ -74,13 +74,32 @@
         "rx"
       ],
       "description": "Ambient temperature per zone"
+    },
+    "ac_load_command": {
+      "name": "AC_LOAD_COMMAND",
+      "hex": "0x1FFBE",
+      "dec": 131006,
+      "direction": [
+        "tx"
+      ],
+      "description": "Energy-managed AC load command (Aqua-Hot electric=212, burner=210). Level half-percent: 0xC8 on, 0x00 off."
+    },
+    "ac_load_status": {
+      "name": "AC_LOAD_STATUS",
+      "hex": "0x1FFBF",
+      "dec": 131007,
+      "direction": [
+        "rx"
+      ],
+      "description": "AC load status; byte2 level 0xFC/0xFD = requested but shed by energy manager."
     }
   },
   "default_topics": {
     "control": "rvcbridge/thermostat_control/+",
     "ack": "rvcbridge/thermostat_control/ack",
     "nack": "rvcbridge/thermostat_control/nack",
-    "audit": "rvcbridge/audit/thermostat_control"
+    "audit": "rvcbridge/audit/thermostat_control",
+    "acload_control": "rvcbridge/acload_control/+"
   },
   "safety": {
     "monitor_only_default": true,
@@ -97,6 +116,10 @@
     "allowed_pgns_hex": [
       "0x1FEF9",
       "0x1FEF8"
+    ],
+    "allowed_acload_instances": [
+      210,
+      212
     ]
   },
   "notes": "v2: field encodings corrected per CoachIQ (github.com/carpenike/coachiq) wire verification on an Entegra Aspire Firefly G6. Setpoints are uint16 1/32-K steps (raw=(degC+273)*32), fan speed is half-percent 0-200, TX arbitration ID = (prio6<<26)|(PGN<<8)|SA(0xF9) = 0x19FEF9F9.",
