@@ -1,22 +1,24 @@
 {
   "profile": "entegra_aspire",
   "source": "can bus data.yml",
-  "updated": "2026-02-20",
+  "updated": "2026-07-08",
   "pgns": {
     "thermostat_status_1": {
       "name": "THERMOSTAT_STATUS_1",
       "hex": "0x1FFE2",
       "dec": 131042,
-      "direction": ["rx"],
+      "direction": [
+        "rx"
+      ],
       "description": "Primary thermostat status PGN (mode/fan/setpoints)",
       "fields": {
         "byte0": "instance",
         "byte1_bits_0_3": "mode",
         "byte1_bits_4_5": "fan_mode",
         "byte1_bits_6_7": "schedule_mode",
-        "byte2": "fan_speed_percent",
-        "byte3_4": "setpoint_heat_c_x100_le",
-        "byte5_6": "setpoint_cool_c_x100_le",
+        "byte2": "fan_speed_halfpct_0_200 (0=auto, 0xC8=100%)",
+        "byte3_4": "setpoint_heat_raw_1_32K_le (raw=(degC+273)*32)",
+        "byte5_6": "setpoint_cool_raw_1_32K_le (raw=(degC+273)*32)",
         "byte7": "reserved"
       },
       "enums": {
@@ -41,28 +43,36 @@
       "name": "THERMOSTAT_COMMAND_1",
       "hex": "0x1FEF9",
       "dec": 130809,
-      "direction": ["tx"],
-      "description": "Primary thermostat command PGN"
+      "direction": [
+        "tx"
+      ],
+      "description": "Primary thermostat command PGN. Full-state frame: unchanged fields must be filled from last THERMOSTAT_STATUS_1 (bridge does this automatically)."
     },
     "thermostat_command_2": {
       "name": "THERMOSTAT_COMMAND_2",
       "hex": "0x1FEF8",
       "dec": 130808,
-      "direction": ["tx"],
+      "direction": [
+        "tx"
+      ],
       "description": "Schedule instance switching"
     },
     "thermostat_status_2": {
       "name": "THERMOSTAT_STATUS_2",
       "hex": "0x1FEFA",
       "dec": 130810,
-      "direction": ["rx"],
+      "direction": [
+        "rx"
+      ],
       "description": "Extended thermostat status"
     },
     "thermostat_ambient_status": {
       "name": "THERMOSTAT_AMBIENT_STATUS",
       "hex": "0x1FF9C",
       "dec": 130972,
-      "direction": ["rx"],
+      "direction": [
+        "rx"
+      ],
       "description": "Ambient temperature per zone"
     }
   },
@@ -75,7 +85,24 @@
   "safety": {
     "monitor_only_default": true,
     "tx_requires_enable": true,
-    "allowed_instances": [0, 1, 2, 3, 4, 5, 6],
-    "allowed_pgns_hex": ["0x1FEF9", "0x1FEF8"]
+    "allowed_instances": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
+    "allowed_pgns_hex": [
+      "0x1FEF9",
+      "0x1FEF8"
+    ]
+  },
+  "notes": "v2: field encodings corrected per CoachIQ (github.com/carpenike/coachiq) wire verification on an Entegra Aspire Firefly G6. Setpoints are uint16 1/32-K steps (raw=(degC+273)*32), fan speed is half-percent 0-200, TX arbitration ID = (prio6<<26)|(PGN<<8)|SA(0xF9) = 0x19FEF9F9.",
+  "tx": {
+    "priority": 6,
+    "source_address_hex": "0xF9",
+    "arbitration_id_hex": "0x19FEF9F9"
   }
 }

@@ -24,8 +24,12 @@ from homeassistant.helpers.restore_state import RestoreEntity
 from .availability import AvailabilityMixin
 from .const import (
     CONF_AVAILABILITY_TIMEOUT,
+    CONF_THERMOSTAT_BRIDGE_MODE,
+    CONF_THERMOSTAT_BRIDGE_TOPIC,
     CONF_TOPIC_PREFIX,
     DEFAULT_AVAILABILITY_TIMEOUT,
+    DEFAULT_THERMOSTAT_BRIDGE_MODE,
+    DEFAULT_THERMOSTAT_BRIDGE_TOPIC,
     DEFAULT_TOPIC_PREFIX,
     DOMAIN,
     SIGNAL_DISCOVERY,
@@ -113,6 +117,16 @@ async def async_setup_entry(
                 instance_id=mapped_instance,
                 topic_prefix=_get_entry_option(entry, CONF_TOPIC_PREFIX, DEFAULT_TOPIC_PREFIX),
                 availability_timeout=availability_timeout,
+                bridge_mode=bool(
+                    _get_entry_option(
+                        entry, CONF_THERMOSTAT_BRIDGE_MODE, DEFAULT_THERMOSTAT_BRIDGE_MODE
+                    )
+                ),
+                bridge_topic=str(
+                    _get_entry_option(
+                        entry, CONF_THERMOSTAT_BRIDGE_TOPIC, DEFAULT_THERMOSTAT_BRIDGE_TOPIC
+                    )
+                ),
             )
             entities[mapped_instance] = entity
             async_add_entities([entity])
@@ -145,8 +159,12 @@ class RVCClimate(AvailabilityMixin, RestoreEntity, ClimateEntity):
         instance_id: str,
         topic_prefix: str,
         availability_timeout: int,
+        bridge_mode: bool = DEFAULT_THERMOSTAT_BRIDGE_MODE,
+        bridge_topic: str = DEFAULT_THERMOSTAT_BRIDGE_TOPIC,
     ) -> None:
         AvailabilityMixin.__init__(self, availability_timeout)
+        self._bridge_mode = bridge_mode
+        self._bridge_topic = bridge_topic
         self._attr_name = name
         self._attr_has_entity_name = False  # Use our name as-is
         self._instance = instance_id
@@ -170,6 +188,7 @@ class RVCClimate(AvailabilityMixin, RestoreEntity, ClimateEntity):
             "setpoint_cool_f": None,
             "setpoint_heat_f": None,
             "last_mqtt_update": None,
+            "thermostat_bridge_mode": bridge_mode,
         }
 
     async def async_added_to_hass(self) -> None:
@@ -231,6 +250,28 @@ class RVCClimate(AvailabilityMixin, RestoreEntity, ClimateEntity):
         """MQTT command topic for this climate zone."""
         # Example: rvc/command/climate/1
         return f"{self._topic_prefix}/command/climate/{self._instance}"
+
+    @property
+    def _bridge_command_topic(self) -> str:
+        """Per-zone control topic for thermostat_command_bridge.py."""
+        # Example: rvcbridge/thermostat_control/1
+        return f"{self._bridge_topic}/{int(self._instance)}"
+
+    async def _async_publish_bridge_command(self, payload: dict[str, Any]) -> None:
+        """Publish an absolute zone command to the thermostat bridge.
+
+        The bridge validates it, fills unchanged fields from the zone's live
+        THERMOSTAT_STATUS_1 state, encodes RV-C Table 5.3 setpoints, and
+        transmits THERMOSTAT_COMMAND_1 (0x19FEF9F9) on CAN. Requires
+        thermostat_command_bridge.py v2 running with --tx-enable.
+        """
+        await mqtt.async_publish(
+            self.hass,
+            self._bridge_command_topic,
+            json.dumps(payload),
+            qos=0,
+            retain=False,
+        )
 
     def handle_mqtt(self, payload: dict[str, Any]) -> None:
         """Update internal state from an MQTT payload."""
@@ -330,18 +371,20 @@ class RVCClimate(AvailabilityMixin, RestoreEntity, ClimateEntity):
 
         operating_mode = mode_map.get(hvac_mode, 0)
 
-        payload = {
-            "operating_mode": operating_mode,
-            "hvac_mode": hvac_mode.value,  # Also include string for bridge compatibility
-        }
-
-        await mqtt.async_publish(
-            self.hass,
-            self._command_topic,
-            json.dumps(payload),
-            qos=0,
-            retain=False,
-        )
+        if self._bridge_mode:
+            await self._async_publish_bridge_command({"mode": operating_mode})
+        else:
+            payload = {
+                "operating_mode": operating_mode,
+                "hvac_mode": hvac_mode.value,  # Also include string for bridge compatibility
+            }
+            await mqtt.async_publish(
+                self.hass,
+                self._command_topic,
+                json.dumps(payload),
+                qos=0,
+                retain=False,
+            )
 
         self.async_write_ha_state()
 
@@ -358,7 +401,12 @@ class RVCClimate(AvailabilityMixin, RestoreEntity, ClimateEntity):
             # Update optimistic target for UI responsiveness
             self._attr_target_temperature = requested
 
-            if requested > current:
+            if self._bridge_mode:
+                # Absolute write: the bridge fills mode/fan from live zone
+                # state, so this changes ONLY the setpoint (heat + cool in
+                # lockstep, matching Firefly G6 behavior).
+                await self._async_publish_bridge_command({"setpoint_f": requested})
+            elif requested > current:
                 await self._async_publish_signature(TEMP_UP_SUFFIX)
             elif requested < current:
                 await self._async_publish_signature(TEMP_DOWN_SUFFIX)
@@ -411,12 +459,23 @@ class RVCClimate(AvailabilityMixin, RestoreEntity, ClimateEntity):
             await asyncio.sleep(burst_interval)
 
     async def async_set_fan_mode(self, fan_mode: str) -> None:
-        """Set fan profile via learned signatures."""
+        """Set fan profile via the bridge (absolute) or learned signatures."""
         normalized = fan_mode.lower()
-        suffix = FAN_MODE_SIGNATURES.get(normalized)
-        if suffix is None:
-            return
-        await self._async_publish_signature(suffix)
+        if self._bridge_mode:
+            fan_payloads = {
+                "auto": {"fan_mode": "auto", "fan_speed_pct": 0},
+                "low": {"fan_mode": "on", "fan_speed_pct": 50},
+                "high": {"fan_mode": "on", "fan_speed_pct": 100},
+            }
+            payload = fan_payloads.get(normalized)
+            if payload is None:
+                return
+            await self._async_publish_bridge_command(payload)
+        else:
+            suffix = FAN_MODE_SIGNATURES.get(normalized)
+            if suffix is None:
+                return
+            await self._async_publish_signature(suffix)
         self._attr_fan_mode = normalized
         self.async_write_ha_state()
 

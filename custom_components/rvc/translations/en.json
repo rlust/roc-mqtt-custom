@@ -21,7 +21,9 @@
           "auto_discovery": "Enable auto discovery",
           "command_topic": "Command topic",
           "gps_topic": "GPS topic",
-          "availability_timeout": "Availability timeout (seconds)"
+          "availability_timeout": "Availability timeout (seconds)",
+          "thermostat_bridge_mode": "Thermostat bridge mode (absolute setpoints via thermostat_command_bridge.py)",
+          "thermostat_bridge_topic": "Thermostat bridge control topic"
         }
       }
     }

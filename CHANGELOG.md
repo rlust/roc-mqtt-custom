@@ -1,5 +1,44 @@
 # Changelog
 
+## v2.4.0 (2026-07-08) — Thermostat control rewrite (CoachIQ findings)
+
+Cross-checked our THERMOSTAT_COMMAND_1 path against the CoachIQ project
+(https://github.com/carpenike/coachiq, Apache-2.0), whose climate control was
+verified byte-for-byte on a live Entegra Aspire Firefly G6 bus. Three wire-level
+bugs fixed, plus a state-cache redesign.
+
+### Fixed
+- **Setpoint encoding**: bytes 3–6 of THERMOSTAT_COMMAND_1 were encoded as
+  °C×100; RV-C Table 5.3 requires uint16 in 1/32-K steps (raw=(°C+273)×32).
+  72°F now encodes as 9447 (0x24E7), not 2222.
+- **CAN arbitration ID**: frames were sent with the bare PGN (0x1FEF9) as the
+  ID; now built as (priority 6 << 26) | (PGN << 8) | source 0xF9 = 0x19FEF9F9.
+- **Fan speed scale**: was sent 0–100; RV-C uses half-percent 0–200
+  (0xC8 = 100%). Default is now 0 (automatic), not 50.
+
+### Added
+- `rvc_climate_units.py`: shared RV-C climate conversions/enums (ported from
+  CoachIQ backend/integrations/rvc/climate_units.py, Apache-2.0).
+- Bridge state cache: subscribes to THERMOSTAT_STATUS_1 topics and fills
+  unchanged fields from live zone state — a setpoint-only command no longer
+  clobbers mode/fan with invented defaults. Zones never seen on the bus are
+  NACKed (`no_status_seen`) unless `--allow-unseeded`.
+- Command confirmation: after TX, the next matching status echo publishes
+  `{"status": "confirmed"}` on the ack topic (DGN pair 1FEF9→1FFE2).
+- Bridge CLI: `--source-address`, `--priority`, `--status-topics`,
+  `--status-max-age`, `--allow-unseeded`, `--confirm-window`.
+- HA integration: optional **Thermostat bridge mode** (Settings → RV-C →
+  Configure) — climate entities publish absolute JSON commands
+  (`{"setpoint_f": 72}`) to `rvcbridge/thermostat_control/<zone>` instead of
+  the legacy learned-signature burst. Off by default; legacy behavior unchanged.
+- Tests: `tests/test_climate_units.py`, `tests/test_thermostat_bridge.py`
+  (25 cases: encoding round-trips, frame bytes, arb ID, state fill-in).
+
+### Changed
+- `thermostat_pgn_map_aspire.json`: corrected byte-field documentation and
+  added TX metadata (priority/SA/arbitration ID).
+- manifest version → 2.4.0.
+
 ## 2.3.3 - 2026-02-21
 
 - Fixed climate entity zone mapping to ignore non-zone climate-like instances and prevent bogus entities (e.g., instance 81).

@@ -10,12 +10,19 @@ CONF_AUTO_DISCOVERY = "auto_discovery"
 CONF_COMMAND_TOPIC = "command_topic"
 CONF_GPS_TOPIC = "gps_topic"
 CONF_AVAILABILITY_TIMEOUT = "availability_timeout"
+CONF_THERMOSTAT_BRIDGE_MODE = "thermostat_bridge_mode"
+CONF_THERMOSTAT_BRIDGE_TOPIC = "thermostat_bridge_topic"
 
 DEFAULT_TOPIC_PREFIX = "rvc"
 DEFAULT_AUTO_DISCOVERY = True
 DEFAULT_COMMAND_TOPIC = "node-red/rvc/commands"
 DEFAULT_GPS_TOPIC = "CP/#"
 DEFAULT_AVAILABILITY_TIMEOUT = 300  # seconds
+# When True, climate entities publish absolute JSON commands to the
+# thermostat_command_bridge (RV-C Table 5.3 encoding, state fill-in)
+# instead of the legacy learned-signature burst.
+DEFAULT_THERMOSTAT_BRIDGE_MODE = False
+DEFAULT_THERMOSTAT_BRIDGE_TOPIC = "rvcbridge/thermostat_control"
 DEFAULT_LIGHT_AVAILABILITY_TIMEOUT = 0
 DEFAULT_SWITCH_AVAILABILITY_TIMEOUT = 0
 DEFAULT_LOCK_AVAILABILITY_TIMEOUT = 0
