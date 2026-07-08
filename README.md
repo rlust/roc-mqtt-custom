@@ -61,6 +61,10 @@ rvc/command/light/<instance>
 The bridge is responsible for translating these JSON commands into the actual CAN frames (e.g. \`cansend can0 ...\`).
 
 
+## Documentation
+
+- [Thermostat Control — Architecture, Wire Protocol, and Rollout](docs/thermostat_control.md) (v2.4.0+): absolute setpoint/mode/fan control via `thermostat_command_bridge.py`, RV-C THERMOSTAT_COMMAND_1 encoding details, state-cache fill-in, and the safe enablement process.
+
 ## Configuration Options
 
 Use the integration options flow (Settings → Devices & Services → RV-C → Configure) to adjust runtime behavior without editing YAML:
