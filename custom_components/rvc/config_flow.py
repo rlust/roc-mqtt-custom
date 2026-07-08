@@ -46,10 +46,11 @@ class RVCConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
         return self.async_show_form(step_id="user", data_schema=data_schema)
 
+    @staticmethod
     @callback
     def async_get_options_flow(
-        self, config_entry: config_entries.ConfigEntry  # type: ignore[override]
-    ):
+        config_entry: config_entries.ConfigEntry,
+    ) -> RVCOptionsFlow:
         return RVCOptionsFlow(config_entry)
 
 
