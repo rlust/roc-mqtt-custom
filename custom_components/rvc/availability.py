@@ -46,12 +46,12 @@ class AvailabilityMixin:
         self.async_write_ha_state()
 
     def _is_within_timeout(self) -> bool:
-        if self._availability_timeout <= 0:
-            return True
         if self._awaiting_first_update:
-            return True
+            return False
         if self._last_update_time is None:
             return False
+        if self._availability_timeout <= 0:
+            return True
         return (time.time() - self._last_update_time) <= self._availability_timeout
 
     @property

@@ -1,4 +1,5 @@
 """Platform for RV-C climate devices."""
+
 from __future__ import annotations
 
 import asyncio
@@ -19,7 +20,6 @@ from homeassistant.helpers import entity_platform
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.restore_state import RestoreEntity
 
 from .availability import AvailabilityMixin
 from .const import (
@@ -54,17 +54,28 @@ from .helpers import get_entry_option as _get_entry_option
 # To recalibrate for a different thermostat: run tools/ac_status_watch.py,
 # press the button on the physical panel, and copy the payload bytes seen on
 # {prefix}/status/climate. Update the constants below to match.
-TEMP_UP_SUFFIX = "FFFFFFFFFAFFFF"    # bump cool setpoint up one step
+TEMP_UP_SUFFIX = "FFFFFFFFFAFFFF"  # bump cool setpoint up one step
 TEMP_DOWN_SUFFIX = "FFFFFFFFF9FFFF"  # bump cool setpoint down one step
-FAN_HIGH_SUFFIX = "DFC8FFFFFFFFFF"   # fan manual, speed 0xC8 (100%)
-FAN_LOW_SUFFIX = "DF64FFFFFFFFFF"    # fan manual, speed 0x64 (50%)
-FAN_AUTO_SUFFIX = "CFFFFFFFFFFFFF"   # fan auto (speed field ignored)
+FAN_HIGH_SUFFIX = "DFC8FFFFFFFFFF"  # fan manual, speed 0xC8 (100%)
+FAN_LOW_SUFFIX = "DF64FFFFFFFFFF"  # fan manual, speed 0x64 (50%)
+FAN_AUTO_SUFFIX = "CFFFFFFFFFFFFF"  # fan auto (speed field ignored)
 
 FAN_MODE_SIGNATURES: dict[str, str] = {
     "high": FAN_HIGH_SUFFIX,
     "low": FAN_LOW_SUFFIX,
     "auto": FAN_AUTO_SUFFIX,
 }
+
+
+def _as_valid_number(value: Any, unavailable_sentinels: frozenset[int] = frozenset()) -> float | None:
+    """Return a numeric value unless RV-C marks it unavailable."""
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if number in unavailable_sentinels:
+        return None
+    return number
 
 
 async def async_setup_entry(
@@ -82,7 +93,7 @@ async def async_setup_entry(
     )
 
     async def _discovery_callback(discovery: dict[str, Any]) -> None:
-        if discovery["type"] != "climate":
+        if discovery["type"] not in ("climate", "sensor"):
             return
 
         payload = discovery["payload"]
@@ -98,7 +109,11 @@ async def async_setup_entry(
             return
 
         heat_only = False
-        if raw_name.startswith("THERMOSTAT_STATUS_1") or raw_name.startswith("THERMOSTAT_COMMAND_1"):
+        if raw_name.startswith("THERMOSTAT_AMBIENT_STATUS"):
+            if raw_instance in range(7):
+                mapped_instance = str(raw_instance)
+                heat_only = mapped_instance in HEAT_ZONE_NAMES
+        elif raw_name.startswith("THERMOSTAT_STATUS_1") or raw_name.startswith("THERMOSTAT_COMMAND_1"):
             if raw_instance in (0, 1, 2):
                 mapped_instance = str(raw_instance)
             elif str(raw_instance) in HEAT_ZONE_NAMES:
@@ -123,15 +138,9 @@ async def async_setup_entry(
                 instance_id=mapped_instance,
                 topic_prefix=_get_entry_option(entry, CONF_TOPIC_PREFIX, DEFAULT_TOPIC_PREFIX),
                 availability_timeout=availability_timeout,
-                bridge_mode=bool(
-                    _get_entry_option(
-                        entry, CONF_THERMOSTAT_BRIDGE_MODE, DEFAULT_THERMOSTAT_BRIDGE_MODE
-                    )
-                ),
+                bridge_mode=bool(_get_entry_option(entry, CONF_THERMOSTAT_BRIDGE_MODE, DEFAULT_THERMOSTAT_BRIDGE_MODE)),
                 bridge_topic=str(
-                    _get_entry_option(
-                        entry, CONF_THERMOSTAT_BRIDGE_TOPIC, DEFAULT_THERMOSTAT_BRIDGE_TOPIC
-                    )
+                    _get_entry_option(entry, CONF_THERMOSTAT_BRIDGE_TOPIC, DEFAULT_THERMOSTAT_BRIDGE_TOPIC)
                 ),
                 heat_only=heat_only,
             )
@@ -153,7 +162,7 @@ async def async_setup_entry(
     )
 
 
-class RVCClimate(AvailabilityMixin, RestoreEntity, ClimateEntity):
+class RVCClimate(AvailabilityMixin, ClimateEntity):
     """Representation of an RV-C climate zone."""
 
     _attr_supported_features = ClimateEntityFeature.TARGET_TEMPERATURE | ClimateEntityFeature.FAN_MODE
@@ -179,14 +188,13 @@ class RVCClimate(AvailabilityMixin, RestoreEntity, ClimateEntity):
             self._attr_supported_features = ClimateEntityFeature.TARGET_TEMPERATURE
             self._attr_hvac_modes = [HVACMode.OFF, HVACMode.HEAT]
             self._attr_fan_modes = None
-            self._attr_hvac_mode = HVACMode.HEAT
         self._attr_name = name
         self._attr_has_entity_name = False  # Use our name as-is
         self._instance = instance_id
         self._topic_prefix = topic_prefix
-        self._attr_hvac_mode = HVACMode.AUTO
-        self._attr_fan_mode = "auto"
-        self._attr_target_temperature = 22.0
+        self._attr_hvac_mode = None
+        self._attr_fan_mode = None
+        self._attr_target_temperature = None
         self._attr_current_temperature = None
         self._attr_temperature_unit = UnitOfTemperature.FAHRENHEIT  # RV-C uses Fahrenheit
 
@@ -204,34 +212,8 @@ class RVCClimate(AvailabilityMixin, RestoreEntity, ClimateEntity):
             "setpoint_heat_f": None,
             "last_mqtt_update": None,
             "thermostat_bridge_mode": bridge_mode,
+            "command_pending": None,
         }
-
-    async def async_added_to_hass(self) -> None:
-        await super().async_added_to_hass()
-        last_state = await self.async_get_last_state()
-        if last_state is None:
-            return
-
-        state = last_state.state
-        for mode in self._attr_hvac_modes:
-            if mode.value == state:
-                self._attr_hvac_mode = mode
-                break
-
-        if (temp := last_state.attributes.get("temperature")) is not None:
-            try:
-                self._attr_target_temperature = float(temp)
-            except (TypeError, ValueError):
-                pass
-
-        if (curr := last_state.attributes.get("current_temperature")) is not None:
-            try:
-                self._attr_current_temperature = float(curr)
-            except (TypeError, ValueError):
-                pass
-
-        if (fan_mode := last_state.attributes.get("fan_mode")) in ("auto", "low", "high"):
-            self._attr_fan_mode = fan_mode
 
     @property
     def unique_id(self) -> str:
@@ -290,37 +272,53 @@ class RVCClimate(AvailabilityMixin, RestoreEntity, ClimateEntity):
 
     def handle_mqtt(self, payload: dict[str, Any]) -> None:
         """Update internal state from an MQTT payload."""
-        self.mark_seen_now()
+        received_valid_state = False
+        updated_fields: set[str] = set()
         # Current temperature (if provided by upstream payload)
         if "current_temperature" in payload:
-            try:
-                self._attr_current_temperature = float(payload["current_temperature"])
-            except (TypeError, ValueError):
-                pass
+            if (value := _as_valid_number(payload["current_temperature"])) is not None:
+                self._attr_current_temperature = value
+                received_valid_state = True
+                updated_fields.add("current_temperature")
         elif "ambient temp F" in payload:
-            try:
-                self._attr_current_temperature = float(payload["ambient temp F"])
-            except (TypeError, ValueError):
-                pass
+            if (value := _as_valid_number(payload["ambient temp F"], frozenset({0xFFFF}))) is not None:
+                self._attr_current_temperature = value
+                received_valid_state = True
+                updated_fields.add("current_temperature")
+        elif "ambient temp" in payload:
+            if (value := _as_valid_number(payload["ambient temp"], frozenset({0xFFFF}))) is not None:
+                self._attr_current_temperature = (value * 9 / 5) + 32
+                received_valid_state = True
+                updated_fields.add("current_temperature")
 
         # Target temperature mapping (heat-only zones track the heat setpoint)
         target_key = "setpoint temp heat F" if self._heat_only else "setpoint temp cool F"
         if "target_temperature" in payload:
-            try:
-                self._attr_target_temperature = float(payload["target_temperature"])
-            except (TypeError, ValueError):
-                pass
+            if (value := _as_valid_number(payload["target_temperature"])) is not None:
+                self._attr_target_temperature = value
+                received_valid_state = True
+                updated_fields.add("temperature")
         elif target_key in payload:
-            try:
-                self._attr_target_temperature = float(payload[target_key])
-            except (TypeError, ValueError):
-                pass
+            if (value := _as_valid_number(payload[target_key], frozenset({0xFFFF}))) is not None:
+                self._attr_target_temperature = value
+                received_valid_state = True
+                updated_fields.add("temperature")
 
         if "hvac_mode" in payload:
             mode = str(payload["hvac_mode"]).lower()
             for m in self._attr_hvac_modes:
                 if m.value == mode:
                     self._attr_hvac_mode = m
+                    received_valid_state = True
+                    updated_fields.add("hvac_mode")
+                    break
+        elif "operating mode definition" in payload:
+            mode = str(payload["operating mode definition"]).lower()
+            for m in self._attr_hvac_modes:
+                if m.value == mode:
+                    self._attr_hvac_mode = m
+                    received_valid_state = True
+                    updated_fields.add("hvac_mode")
                     break
 
         # Capture diagnostic attributes from RV-C payload
@@ -329,25 +327,30 @@ class RVCClimate(AvailabilityMixin, RestoreEntity, ClimateEntity):
         # AC output level (from AIR_CONDITIONER_STATUS)
         if "air conditioning output level" in payload:
             attrs["ac_output_level"] = payload["air conditioning output level"]
+            received_valid_state = True
 
         # Fan speed (actual from AIR_CONDITIONER_STATUS or THERMOSTAT)
         if "fan speed" in payload:
             attrs["fan_speed_actual"] = payload["fan speed"]
+            received_valid_state = True
 
         # Fan mode (from THERMOSTAT_STATUS_1) + HA fan mode mapping
         fan_def = payload.get("fan mode definition")
         fan_speed = payload.get("fan speed")
         if fan_def is not None:
             attrs["fan_mode"] = fan_def
+            received_valid_state = True
             fan_def_l = str(fan_def).lower()
             if fan_def_l == "auto":
                 self._attr_fan_mode = "auto"
+                updated_fields.add("fan_mode")
             elif fan_def_l == "on":
                 # RV-C only exposes on + speed; map to low/high for HA UX
                 try:
                     self._attr_fan_mode = "high" if int(fan_speed) >= 100 else "low"
                 except (TypeError, ValueError):
                     self._attr_fan_mode = "high"
+                updated_fields.add("fan_mode")
         elif "fan mode" in payload:
             attrs["fan_mode"] = f"Mode {payload['fan mode']}"
 
@@ -366,16 +369,40 @@ class RVCClimate(AvailabilityMixin, RestoreEntity, ClimateEntity):
         if "setpoint temp heat F" in payload:
             attrs["setpoint_heat_f"] = payload["setpoint temp heat F"]
 
+        if received_valid_state:
+            self.mark_seen_now()
+            if self._pending_command_confirmed(updated_fields):
+                attrs["command_pending"] = None
+
         # Timestamp for diagnostics
         if "timestamp" in payload:
             attrs["last_mqtt_update"] = payload["timestamp"]
 
         self.async_write_ha_state()
 
+    def _pending_command_confirmed(self, updated_fields: set[str]) -> bool:
+        """Return whether current telemetry confirms the pending command."""
+        pending = self._attr_extra_state_attributes.get("command_pending")
+        if not isinstance(pending, dict):
+            return False
+        if pending.get("type") == "hvac_mode":
+            return (
+                "hvac_mode" in updated_fields
+                and self._attr_hvac_mode is not None
+                and self._attr_hvac_mode.value == pending.get("value")
+            )
+        if pending.get("type") == "temperature":
+            return (
+                "temperature" in updated_fields
+                and self._attr_target_temperature is not None
+                and abs(self._attr_target_temperature - pending.get("value", 0)) < 0.2
+            )
+        if pending.get("type") == "fan_mode":
+            return "fan_mode" in updated_fields and self._attr_fan_mode == pending.get("value")
+        return False
+
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         """Set new HVAC mode and publish to MQTT."""
-        self._attr_hvac_mode = hvac_mode
-
         # Map HA HVAC mode to RV-C operating mode
         # RV-C modes: off=0, cool=1, heat=2, auto=3 (typical values)
         mode_map = {
@@ -402,6 +429,10 @@ class RVCClimate(AvailabilityMixin, RestoreEntity, ClimateEntity):
                 retain=False,
             )
 
+        self._attr_extra_state_attributes["command_pending"] = {
+            "type": "hvac_mode",
+            "value": hvac_mode.value,
+        }
         self.async_write_ha_state()
 
     async def async_set_temperature(self, **kwargs: Any) -> None:
@@ -413,9 +444,6 @@ class RVCClimate(AvailabilityMixin, RestoreEntity, ClimateEntity):
         if "temperature" in kwargs:
             requested = float(kwargs["temperature"])
             current = self._attr_target_temperature or requested
-
-            # Update optimistic target for UI responsiveness
-            self._attr_target_temperature = requested
 
             if self._bridge_mode:
                 # Absolute write: the bridge fills mode/fan from live zone
@@ -432,7 +460,6 @@ class RVCClimate(AvailabilityMixin, RestoreEntity, ClimateEntity):
             # If HVAC mode is also being set, keep legacy bridge compatibility
             if "hvac_mode" in kwargs:
                 hvac_mode = kwargs["hvac_mode"]
-                self._attr_hvac_mode = hvac_mode
                 mode_map = {
                     HVACMode.OFF: 0,
                     HVACMode.COOL: 1,
@@ -451,9 +478,15 @@ class RVCClimate(AvailabilityMixin, RestoreEntity, ClimateEntity):
                     retain=False,
                 )
 
+            self._attr_extra_state_attributes["command_pending"] = {
+                "type": "temperature",
+                "value": requested,
+            }
             self.async_write_ha_state()
 
-    async def _async_publish_signature(self, suffix: str, *, burst_seconds: float = 2.5, burst_interval: float = 0.35) -> None:
+    async def _async_publish_signature(
+        self, suffix: str, *, burst_seconds: float = 2.5, burst_interval: float = 0.35
+    ) -> None:
         """Publish learned THERMOSTAT_COMMAND_1 signature with short burst for gate reliability."""
         prefix = f"{int(self._instance):02X}"
         data_hex = f"{prefix}{suffix}"
@@ -494,7 +527,10 @@ class RVCClimate(AvailabilityMixin, RestoreEntity, ClimateEntity):
             if suffix is None:
                 return
             await self._async_publish_signature(suffix)
-        self._attr_fan_mode = normalized
+        self._attr_extra_state_attributes["command_pending"] = {
+            "type": "fan_mode",
+            "value": normalized,
+        }
         self.async_write_ha_state()
 
     async def async_set_fan_profile(self, fan_profile: str) -> None:

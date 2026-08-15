@@ -16,7 +16,9 @@ Custom Home Assistant integration to monitor and control RV-C devices via MQTT.
   - Generator control buttons (start/stop)
   - Door lock buttons (separate lock + unlock triggers)
 - UI-based configuration (config flow + options flow)
-- Built-in availability monitoring for every platform
+- Evidence-driven availability: telemetry entities remain unavailable until
+  their first valid update and become stale after the configured timeout
+- Commands remain pending until status telemetry confirms physical state
 - Command topic pattern for bridge / CAN gateway (default `node-red/rvc/commands`):
   - `rvc/command/light/<instance>`
 
@@ -73,7 +75,7 @@ Use the integration options flow (Settings → Devices & Services → RV-C → C
 - **Auto discovery** – Toggle automatic entity creation from incoming topics.
 - **Command topic** – Where control payloads are published (default `node-red/rvc/commands`).
 - **GPS topic** – Topic filter for CP/GPSDATA messages (default `CP/#`).
-- **Availability timeout** – Seconds before entities are marked unavailable when no telemetry is received (default 300s).
+- **Availability timeout** – Seconds before entities are marked unavailable when no valid telemetry is received (default 300s). A value of `0` disables staleness after the first valid update.
 
 ## Installation
 

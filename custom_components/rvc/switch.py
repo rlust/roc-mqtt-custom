@@ -145,6 +145,7 @@ class RVCSwitch(AvailabilityMixin, RestoreEntity, SwitchEntity):
             "availability_timeout": availability_timeout,
             "last_command": None,
             "last_mqtt_update": None,
+            "command_pending": None,
         }
 
     async def async_added_to_hass(self) -> None:
@@ -170,12 +171,13 @@ class RVCSwitch(AvailabilityMixin, RestoreEntity, SwitchEntity):
         )
 
     def handle_mqtt(self, payload: dict[str, Any]) -> None:
-        self.mark_seen_now()
+        state_confirmed = False
 
         if "operating status (brightness)" in payload:
             try:
                 pct = float(payload["operating status (brightness)"])
                 self._attr_is_on = pct > 0
+                state_confirmed = True
             except (TypeError, ValueError):
                 pass
 
@@ -183,6 +185,7 @@ class RVCSwitch(AvailabilityMixin, RestoreEntity, SwitchEntity):
             state = str(payload["state"]).upper()
             if state in ("ON", "OFF"):
                 self._attr_is_on = state == "ON"
+                state_confirmed = True
 
         attrs = self._attr_extra_state_attributes
         if "last command definition" in payload:
@@ -193,20 +196,39 @@ class RVCSwitch(AvailabilityMixin, RestoreEntity, SwitchEntity):
         if "timestamp" in payload:
             attrs["last_mqtt_update"] = payload["timestamp"]
 
+        if state_confirmed:
+            self.mark_seen_now()
+            self._attr_assumed_state = False
+            if self._pending_command_confirmed():
+                attrs["command_pending"] = None
+
         self.async_write_ha_state()
+
+    def _pending_command_confirmed(self) -> bool:
+        pending = self._attr_extra_state_attributes.get("command_pending")
+        if not isinstance(pending, dict):
+            return False
+        return (pending.get("type") == "turn_on" and self._attr_is_on is True) or (
+            pending.get("type") == "turn_off" and self._attr_is_on is False
+        )
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         await self._async_publish(command=2, value=100)
-        self._attr_is_on = True
+        self._attr_extra_state_attributes["command_pending"] = {"type": "turn_on"}
         self.async_write_ha_state()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         await self._async_publish(command=3, value=0)
-        self._attr_is_on = False
+        self._attr_extra_state_attributes["command_pending"] = {"type": "turn_off"}
         self.async_write_ha_state()
 
     async def async_toggle(self, **kwargs: Any) -> None:
         await self._async_publish(command=5, value=100)
+        self._attr_extra_state_attributes["command_pending"] = {
+            "type": "toggle",
+            "confirmation": "unconfirmed",
+        }
+        self.async_write_ha_state()
 
     async def _async_publish(self, command: int, value: int) -> None:
         instance = int(self._instance)
@@ -246,6 +268,7 @@ class RVCAcLoadSwitch(AvailabilityMixin, RestoreEntity, SwitchEntity):
             "shed": False,
             "level_raw": None,
             "last_mqtt_update": None,
+            "command_pending": None,
         }
 
     async def async_added_to_hass(self) -> None:
@@ -269,7 +292,6 @@ class RVCAcLoadSwitch(AvailabilityMixin, RestoreEntity, SwitchEntity):
         )
 
     def handle_mqtt(self, payload: dict[str, Any]) -> None:
-        self.mark_seen_now()
         attrs = self._attr_extra_state_attributes
 
         level = None
@@ -285,11 +307,18 @@ class RVCAcLoadSwitch(AvailabilityMixin, RestoreEntity, SwitchEntity):
             except (TypeError, ValueError):
                 level = None
 
-        if level is not None:
+        if level is not None and level != 0xFF:
             attrs["level_raw"] = level
             shed = level in (0xFC, 0xFD)
             attrs["shed"] = shed
             self._attr_is_on = shed or level > 0
+            self.mark_seen_now()
+            pending = attrs.get("command_pending")
+            if isinstance(pending, dict) and (
+                (pending.get("type") == "turn_on" and self._attr_is_on is True)
+                or (pending.get("type") == "turn_off" and self._attr_is_on is False)
+            ):
+                attrs["command_pending"] = None
 
         if "timestamp" in payload:
             attrs["last_mqtt_update"] = payload["timestamp"]
@@ -306,10 +335,10 @@ class RVCAcLoadSwitch(AvailabilityMixin, RestoreEntity, SwitchEntity):
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         await self._async_publish_acload("on")
-        self._attr_is_on = True
+        self._attr_extra_state_attributes["command_pending"] = {"type": "turn_on"}
         self.async_write_ha_state()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         await self._async_publish_acload("off")
-        self._attr_is_on = False
+        self._attr_extra_state_attributes["command_pending"] = {"type": "turn_off"}
         self.async_write_ha_state()
