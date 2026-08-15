@@ -12,7 +12,15 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import DOMAIN, SIGNAL_DISCOVERY
+from .availability import AvailabilityMixin
+from .const import (
+    CONF_AVAILABILITY_TIMEOUT,
+    DEFAULT_AVAILABILITY_TIMEOUT,
+    DOMAIN,
+    SIGNAL_DISCOVERY,
+)
+from .helpers import coerce_int as _coerce_int
+from .helpers import get_entry_option as _get_entry_option
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -26,6 +34,10 @@ async def async_setup_entry(
 
     data = hass.data[DOMAIN][entry.entry_id]
     entities: dict[str, RVCGPSTracker] = {}
+    availability_timeout = _coerce_int(
+        _get_entry_option(entry, CONF_AVAILABILITY_TIMEOUT, DEFAULT_AVAILABILITY_TIMEOUT),
+        DEFAULT_AVAILABILITY_TIMEOUT,
+    )
 
     _LOGGER.info("Setting up RV-C GPS device tracker")
 
@@ -41,7 +53,7 @@ async def async_setup_entry(
         if entity is None:
             # Create GPS tracker entity
             _LOGGER.info("Creating GPS device tracker entity")
-            entity = RVCGPSTracker()
+            entity = RVCGPSTracker(availability_timeout)
             entities[instance] = entity
             async_add_entities([entity])
 
@@ -52,10 +64,11 @@ async def async_setup_entry(
     data["unsub_dispatchers"].append(unsub)
 
 
-class RVCGPSTracker(TrackerEntity):
+class RVCGPSTracker(AvailabilityMixin, TrackerEntity):
     """Representation of an RV-C GPS tracker."""
 
-    def __init__(self) -> None:
+    def __init__(self, availability_timeout: int) -> None:
+        AvailabilityMixin.__init__(self, availability_timeout)
         self._attr_name = "RV GPS"
         self._attr_has_entity_name = False
         self._latitude: float | None = None
@@ -64,7 +77,6 @@ class RVCGPSTracker(TrackerEntity):
         self._speed: float | None = None
         self._heading: float | None = None
         self._gps_accuracy: float | None = None
-        self._attr_available = False  # Start as unavailable until GPS data arrives
 
         # Store GPS data as extra state attributes
         self._attr_extra_state_attributes = {
@@ -126,7 +138,7 @@ class RVCGPSTracker(TrackerEntity):
         if "lat" in payload and "lon" in payload:
             self._latitude = float(payload["lat"])
             self._longitude = float(payload["lon"])
-            self._attr_available = True
+            self.mark_seen_now()
 
             _LOGGER.info(
                 "GPS location updated: lat=%.6f, lon=%.6f",

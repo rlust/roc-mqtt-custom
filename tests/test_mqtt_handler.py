@@ -1,13 +1,13 @@
 """Tests for the RVC MQTT handler: classification and payload validation."""
+
 import asyncio
 import json
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from custom_components.rvc.mqtt_handler import RVCMQTTHandler, _coerce_float
-from tests.conftest import get_dispatch_calls
 
 
 def make_handler():
@@ -21,9 +21,9 @@ def msg(topic, payload):
 
 
 def receive(handler, message):
-    before = len(get_dispatch_calls())
-    asyncio.get_event_loop().run_until_complete(handler._message_received(message))
-    return get_dispatch_calls()[before:]
+    with patch("custom_components.rvc.mqtt_handler.async_dispatcher_send") as dispatch:
+        asyncio.run(handler._message_received(message))
+    return [call.args[1:] for call in dispatch.call_args_list]
 
 
 class TestCoerceFloat:

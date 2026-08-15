@@ -185,6 +185,7 @@ class RVCLight(AvailabilityMixin, RestoreEntity, LightEntity):
             "interlock_status": None,
             "group_bits": None,
             "last_mqtt_update": None,
+            "command_pending": None,
         }
 
         _LOGGER.info(
@@ -288,17 +289,8 @@ class RVCLight(AvailabilityMixin, RestoreEntity, LightEntity):
             self._instance, payload
         )
 
-        # Disable assumed_state on first MQTT message
-        # Entity transitions from "assumed" (dashed circle) to "known" (normal icon)
-        if self._attr_assumed_state:
-            _LOGGER.info(
-                "Light %s received first MQTT status - state now confirmed (no longer assumed)",
-                self._instance
-            )
-            self._attr_assumed_state = False
-
-        # Track last update time for availability monitoring
-        self.mark_seen_now()
+        state_confirmed = False
+        updated_fields: set[str] = set()
 
         # Raw RV-C dimmer payload: "operating status (brightness)" 0–100
         if "operating status (brightness)" in payload:
@@ -306,22 +298,27 @@ class RVCLight(AvailabilityMixin, RestoreEntity, LightEntity):
                 pct = float(payload["operating status (brightness)"])
                 pct = max(0.0, min(100.0, pct))
                 self._attr_brightness = int(round(pct * 2.55))
+                self._attr_is_on = self._attr_brightness > 0
+                state_confirmed = True
+                updated_fields.update(("state", "brightness"))
             except (TypeError, ValueError):
                 pass
-
-            # Consider >0 brightness as ON
-            self._attr_is_on = self._attr_brightness > 0
 
         # Optional explicit 'state'
         if "state" in payload:
             state_str = str(payload["state"]).upper()
             if state_str in ("ON", "OFF"):
                 self._attr_is_on = state_str == "ON"
+                state_confirmed = True
+                updated_fields.add("state")
 
         # Optional direct brightness 0–255
         if "brightness" in payload:
             try:
                 self._attr_brightness = int(payload["brightness"])
+                self._attr_is_on = self._attr_brightness > 0
+                state_confirmed = True
+                updated_fields.update(("state", "brightness"))
             except (TypeError, ValueError):
                 pass
 
@@ -357,12 +354,35 @@ class RVCLight(AvailabilityMixin, RestoreEntity, LightEntity):
         if "timestamp" in payload:
             attrs["last_mqtt_update"] = payload["timestamp"]
 
+        if state_confirmed:
+            self.mark_seen_now()
+            self._attr_assumed_state = False
+            if self._pending_command_confirmed(updated_fields):
+                attrs["command_pending"] = None
+
         self.async_write_ha_state()
+
+    def _pending_command_confirmed(self, updated_fields: set[str]) -> bool:
+        """Return whether current telemetry confirms the pending command."""
+        pending = self._attr_extra_state_attributes.get("command_pending")
+        if not isinstance(pending, dict):
+            return False
+        if pending.get("type") == "turn_off":
+            return "state" in updated_fields and self._attr_is_on is False
+        if pending.get("type") != "turn_on" or self._attr_is_on is not True:
+            return False
+        if not self._is_dimmable:
+            return "state" in updated_fields
+        expected = pending.get("brightness")
+        return (
+            "brightness" in updated_fields
+            and isinstance(expected, int)
+            and self._attr_brightness is not None
+            and abs(self._attr_brightness - expected) <= 3
+        )
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn the light on using Node-RED format."""
-
-        self._attr_is_on = True
 
         # Node-RED format: "instance command brightness"
         # Command 2 = Turn ON
@@ -373,7 +393,6 @@ class RVCLight(AvailabilityMixin, RestoreEntity, LightEntity):
             # Dimmable lights: use brightness from kwargs or current value
             brightness = kwargs.get(ATTR_BRIGHTNESS, self._attr_brightness or 255)
             brightness = max(0, min(255, int(brightness)))
-            self._attr_brightness = brightness
 
             # Convert HA brightness (0-255) to RV-C level (0-100)
             desired_level = int(round(brightness / 2.55))
@@ -402,13 +421,14 @@ class RVCLight(AvailabilityMixin, RestoreEntity, LightEntity):
             retain=False,
         )
 
+        self._attr_extra_state_attributes["command_pending"] = {
+            "type": "turn_on",
+            "brightness": brightness if self._is_dimmable else 255,
+        }
         self.async_write_ha_state()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn the light off using Node-RED format."""
-
-        self._attr_is_on = False
-        self._attr_brightness = 0
 
         # Node-RED format: "instance command brightness"
         # Command 3 = Turn OFF
@@ -430,6 +450,7 @@ class RVCLight(AvailabilityMixin, RestoreEntity, LightEntity):
             retain=False,
         )
 
+        self._attr_extra_state_attributes["command_pending"] = {"type": "turn_off"}
         self.async_write_ha_state()
 
     async def async_ramp_up(self, duration: int) -> None:

@@ -1,5 +1,29 @@
 # Changelog
 
+## v2.5.1 (2026-08-15) — Evidence-driven state
+
+### Fixed
+
+- Entities now begin unavailable until valid telemetry arrives and become
+  unavailable again when the configured freshness timeout expires. Dynamic
+  sensors and the GPS tracker use the same freshness model.
+- Standard RV-C unavailable/error sentinels (`0xFF` and `0xFFFF`) now map to
+  unknown values, including battery time remaining `65535`.
+- MQTT publish success no longer changes observed light, switch, Aqua-Hot,
+  lock, cover, or climate state. Commands expose pending intent until a status
+  message confirms physical state.
+- `THERMOSTAT_AMBIENT_STATUS` is correlated into the matching climate zone.
+  Heat-only zones expose only off/heat with no fan mode.
+- AC load operating percentage is now a plain percentage measurement instead
+  of being mislabeled as electrical power factor.
+
+### Tests
+
+- Replaced fabricated Home Assistant modules with the native custom-component
+  harness. Coverage now includes entry setup/unload/reload, config/options
+  flows, freshness, sentinel handling, climate correlation, and command-state
+  behavior while preserving the existing pure-logic tests.
+
 ## v2.5.0 (2026-07-08) — Aqua-Hot control + heat zones
 
 ### Added

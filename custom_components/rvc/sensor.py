@@ -21,7 +21,41 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import DOMAIN, SIGNAL_DISCOVERY
+from .availability import AvailabilityMixin
+from .const import (
+    CONF_AVAILABILITY_TIMEOUT,
+    DEFAULT_AVAILABILITY_TIMEOUT,
+    DOMAIN,
+    SIGNAL_DISCOVERY,
+)
+from .helpers import coerce_int as _coerce_int
+from .helpers import get_entry_option as _get_entry_option
+
+
+def _normalize_rvc_value(value: Any, sentinels: frozenset[int]) -> Any | None:
+    """Map field-specific RV-C unavailable/error sentinels to unknown."""
+    if value is None:
+        return None
+    candidate = value
+    if isinstance(value, str):
+        stripped = value.strip()
+        try:
+            candidate = int(stripped, 0)
+        except ValueError:
+            try:
+                candidate = float(stripped)
+            except ValueError:
+                return value
+    if isinstance(candidate, (int, float)) and candidate in sentinels:
+        return None
+    return value
+
+
+def _valid_numeric(
+    payload: dict[str, Any], key: str, sentinels: frozenset[int]
+) -> Any | None:
+    """Return a numeric RV-C field unless it carries an unavailable sentinel."""
+    return _normalize_rvc_value(payload.get(key), sentinels)
 
 
 async def async_setup_entry(
@@ -33,6 +67,10 @@ async def async_setup_entry(
 
     data = hass.data[DOMAIN][entry.entry_id]
     entities: dict[str, RVCSensor] = {}
+    availability_timeout = _coerce_int(
+        _get_entry_option(entry, CONF_AVAILABILITY_TIMEOUT, DEFAULT_AVAILABILITY_TIMEOUT),
+        DEFAULT_AVAILABILITY_TIMEOUT,
+    )
 
     async def _discovery_callback(discovery: dict[str, Any]) -> None:
         if discovery["type"] != "sensor":
@@ -57,7 +95,8 @@ async def async_setup_entry(
                     device_class=sensor_def.get("device_class"),
                     unit=sensor_def.get("unit"),
                     state_class=sensor_def.get("state_class"),
-                    initial_value=sensor_def["value"],  # Set initial value
+                    initial_value=sensor_def["value"],
+                    availability_timeout=availability_timeout,
                 )
                 entities[unique_key] = entity
                 new_entities.append(entity)
@@ -85,17 +124,22 @@ def _extract_sensor_definitions(
             tank_type = payload.get("instance definition", "Tank").replace(" tank", "").title()
 
             # Calculate actual percentage: relative level / resolution
-            relative_level = payload["relative level"]
+            relative_level = _valid_numeric(
+                payload, "relative level", frozenset({0xFF})
+            )
             resolution = payload.get("resolution", 100)  # Default to 100 if missing
 
             # Avoid division by zero
-            if resolution and resolution > 0:
+            if relative_level is None:
+                tank_percentage = None
+            elif resolution and resolution > 0:
                 tank_percentage = round((relative_level / resolution) * 100, 1)
             else:
                 tank_percentage = relative_level  # Fallback to raw value
 
             # Clamp to 0-100 range
-            tank_percentage = max(0, min(100, tank_percentage))
+            if tank_percentage is not None:
+                tank_percentage = max(0, min(100, tank_percentage))
 
             # BACKWARD COMPATIBILITY: Use old unique_id format to avoid orphaning existing entities
             sensors.append({
@@ -115,7 +159,9 @@ def _extract_sensor_definitions(
                 "unique_key": f"{inst_str}_ambient_temp",
                 "unique_id": f"rvc_thermostat_{inst_str}_ambient",
                 "name": f"Zone {inst_str} Ambient Temperature",
-                "value": payload["ambient temp F"],
+                "value": _normalize_rvc_value(
+                    payload["ambient temp F"], frozenset({0xFFFF})
+                ),
                 "unit": UnitOfTemperature.FAHRENHEIT,
                 "device_class": SensorDeviceClass.TEMPERATURE,
                 "state_class": SensorStateClass.MEASUREMENT,
@@ -125,7 +171,9 @@ def _extract_sensor_definitions(
                 "unique_key": f"{inst_str}_ambient_temp",
                 "unique_id": f"rvc_thermostat_{inst_str}_ambient",
                 "name": f"Zone {inst_str} Ambient Temperature",
-                "value": payload["ambient temp"],
+                "value": _normalize_rvc_value(
+                    payload["ambient temp"], frozenset({0xFFFF})
+                ),
                 "unit": UnitOfTemperature.CELSIUS,
                 "device_class": SensorDeviceClass.TEMPERATURE,
                 "state_class": SensorStateClass.MEASUREMENT,
@@ -199,7 +247,7 @@ def _extract_sensor_definitions(
                 "name": f"AC Load {inst_str} Status",
                 "value": payload["operating status"],
                 "unit": PERCENTAGE,
-                "device_class": SensorDeviceClass.POWER_FACTOR,
+                "device_class": None,
                 "state_class": SensorStateClass.MEASUREMENT,
             })
         if "demanded current" in payload:
@@ -276,7 +324,9 @@ def _extract_sensor_definitions(
                 "unique_key": f"{inst_str}_battery_soc",
                 "unique_id": f"rvc_battery_{inst_str}_soc",
                 "name": f"Battery {inst_str} State of Charge",
-                "value": payload["state of charge"],
+                "value": _normalize_rvc_value(
+                    payload["state of charge"], frozenset({0xFF})
+                ),
                 "unit": PERCENTAGE,
                 "device_class": SensorDeviceClass.BATTERY,
                 "state_class": SensorStateClass.MEASUREMENT,
@@ -286,7 +336,9 @@ def _extract_sensor_definitions(
                 "unique_key": f"{inst_str}_battery_temp",
                 "unique_id": f"rvc_battery_{inst_str}_temperature",
                 "name": f"Battery {inst_str} Temperature",
-                "value": payload["source temperature"],
+                "value": _normalize_rvc_value(
+                    payload["source temperature"], frozenset({0xFFFF})
+                ),
                 "unit": UnitOfTemperature.CELSIUS,
                 "device_class": SensorDeviceClass.TEMPERATURE,
                 "state_class": SensorStateClass.MEASUREMENT,
@@ -297,7 +349,9 @@ def _extract_sensor_definitions(
                 "unique_key": f"{inst_str}_battery_time_remaining",
                 "unique_id": f"rvc_battery_{inst_str}_time_remaining",
                 "name": f"Battery {inst_str} Time Remaining",
-                "value": payload["time remaining"],
+                "value": _normalize_rvc_value(
+                    payload["time remaining"], frozenset({0xFFFF})
+                ),
                 "unit": "min",
                 "device_class": SensorDeviceClass.DURATION,
                 "state_class": SensorStateClass.MEASUREMENT,
@@ -310,7 +364,9 @@ def _extract_sensor_definitions(
                 "unique_key": f"{inst_str}_battery_soh",
                 "unique_id": f"rvc_battery_{inst_str}_soh",
                 "name": f"Battery {inst_str} State of Health",
-                "value": payload["state of health"],
+                "value": _normalize_rvc_value(
+                    payload["state of health"], frozenset({0xFF})
+                ),
                 "unit": PERCENTAGE,
                 "device_class": None,
                 "state_class": SensorStateClass.MEASUREMENT,
@@ -321,7 +377,9 @@ def _extract_sensor_definitions(
                 "unique_key": f"{inst_str}_battery_capacity_remaining",
                 "unique_id": f"rvc_battery_{inst_str}_capacity",
                 "name": f"Battery {inst_str} Capacity Remaining",
-                "value": payload["capacity remaining"],
+                "value": _normalize_rvc_value(
+                    payload["capacity remaining"], frozenset({0xFFFF})
+                ),
                 "unit": "Ah",
                 "device_class": None,
                 "state_class": SensorStateClass.MEASUREMENT,
@@ -448,7 +506,7 @@ def _extract_sensor_definitions(
     return sensors
 
 
-class RVCSensor(SensorEntity):
+class RVCSensor(AvailabilityMixin, SensorEntity):
     """RV-C sensor entity with proper field extraction."""
 
     def __init__(
@@ -459,8 +517,10 @@ class RVCSensor(SensorEntity):
         unit: str | None = None,
         state_class: str | None = None,
         initial_value: Any = None,
+        availability_timeout: int = DEFAULT_AVAILABILITY_TIMEOUT,
     ) -> None:
         """Initialize the sensor."""
+        AvailabilityMixin.__init__(self, availability_timeout)
         self._attr_name = name
         self._attr_has_entity_name = False  # Use our name as-is
         self._attr_unique_id = unique_id
@@ -468,6 +528,8 @@ class RVCSensor(SensorEntity):
         self._attr_native_unit_of_measurement = unit
         self._attr_device_class = device_class
         self._attr_state_class = state_class
+        if initial_value is not None:
+            self.mark_seen_now()
 
         # Extract instance and sensor type from unique_id for device grouping
         # unique_id format examples: "rvc_battery_1_voltage", "rvc_inverter_0_dc_voltage"
@@ -534,4 +596,6 @@ class RVCSensor(SensorEntity):
     def update_value(self, value: Any) -> None:
         """Update the sensor value and write state."""
         self._attr_native_value = value
+        if value is not None:
+            self.mark_seen_now()
         self.async_write_ha_state()

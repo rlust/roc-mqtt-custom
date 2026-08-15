@@ -240,7 +240,7 @@ class RVCAwning(AvailabilityMixin, CoverEntity):
             )
 
         # State tracking
-        self._attr_is_closed = True  # Default to retracted
+        self._attr_is_closed = None
         self._attr_is_closing = False
         self._attr_is_opening = False
         self._attr_assumed_state = True  # Until MQTT confirms
@@ -254,6 +254,7 @@ class RVCAwning(AvailabilityMixin, CoverEntity):
             "rvc_topic_prefix": topic_prefix,
             "last_command": None,
             "last_mqtt_update": None,
+            "command_pending": None,
         }
 
         _LOGGER.info(
@@ -290,16 +291,8 @@ class RVCAwning(AvailabilityMixin, CoverEntity):
             self._awning_id, instance, payload
         )
 
-        # Disable assumed_state on first MQTT message
-        if self._attr_assumed_state:
-            _LOGGER.info(
-                "Awning %s received first MQTT status - state now confirmed",
-                self._awning_id
-            )
-            self._attr_assumed_state = False
-
-        # Track last update time
-        self.mark_seen_now()
+        state_confirmed = False
+        confirmed_action: str | None = None
 
         # Determine state from brightness/operating status
         if "operating status (brightness)" in payload:
@@ -307,18 +300,28 @@ class RVCAwning(AvailabilityMixin, CoverEntity):
                 brightness = float(payload["operating status (brightness)"])
                 # If extend instance is active (>0), awning is extending/extended
                 if instance == self._extend_instance:
+                    state_confirmed = True
                     if brightness > 0:
                         self._attr_is_opening = True
                         self._attr_is_closing = False
+                        confirmed_action = "open"
                     else:
                         self._attr_is_opening = False
                 # If retract instance is active (>0), awning is retracting/retracted
                 elif instance == self._retract_instance:
+                    state_confirmed = True
                     if brightness > 0:
                         self._attr_is_closing = True
                         self._attr_is_opening = False
+                        confirmed_action = "close"
                     else:
                         self._attr_is_closing = False
+                elif instance == self._stop_instance:
+                    state_confirmed = True
+                    if brightness > 0:
+                        self._attr_is_opening = False
+                        self._attr_is_closing = False
+                        confirmed_action = "stop"
             except (TypeError, ValueError):
                 pass
 
@@ -333,14 +336,17 @@ class RVCAwning(AvailabilityMixin, CoverEntity):
         if "timestamp" in payload:
             attrs["last_mqtt_update"] = payload["timestamp"]
 
+        if state_confirmed:
+            self.mark_seen_now()
+            self._attr_assumed_state = False
+            pending = attrs.get("command_pending")
+            if isinstance(pending, dict) and pending.get("type") == confirmed_action:
+                attrs["command_pending"] = None
+
         self.async_write_ha_state()
 
     async def async_open_cover(self, **kwargs: Any) -> None:
         """Extend the awning."""
-        self._attr_is_opening = True
-        self._attr_is_closing = False
-        self._attr_is_closed = False
-
         # Node-RED format uses string payloads; also publish direct RV-C JSON.
         instance = self._extend_instance
         command = 2
@@ -356,13 +362,11 @@ class RVCAwning(AvailabilityMixin, CoverEntity):
             brightness,
         )
 
+        self._attr_extra_state_attributes["command_pending"] = {"type": "open"}
         self.async_write_ha_state()
 
     async def async_close_cover(self, **kwargs: Any) -> None:
         """Retract the awning."""
-        self._attr_is_closing = True
-        self._attr_is_opening = False
-
         instance = self._retract_instance
         command = 2
         brightness = 100
@@ -377,6 +381,7 @@ class RVCAwning(AvailabilityMixin, CoverEntity):
             brightness,
         )
 
+        self._attr_extra_state_attributes["command_pending"] = {"type": "close"}
         self.async_write_ha_state()
 
     async def async_stop_cover(self, **kwargs: Any) -> None:
@@ -388,9 +393,6 @@ class RVCAwning(AvailabilityMixin, CoverEntity):
                 self._awning_id
             )
             return
-
-        self._attr_is_opening = False
-        self._attr_is_closing = False
 
         instance = self._stop_instance
         command = 2
@@ -406,6 +408,7 @@ class RVCAwning(AvailabilityMixin, CoverEntity):
             brightness,
         )
 
+        self._attr_extra_state_attributes["command_pending"] = {"type": "stop"}
         self.async_write_ha_state()
 
 
@@ -442,7 +445,7 @@ class RVCSlide(AvailabilityMixin, CoverEntity):
         )
 
         # State tracking
-        self._attr_is_closed = True  # Default to retracted
+        self._attr_is_closed = None
         self._attr_is_closing = False
         self._attr_is_opening = False
         self._attr_assumed_state = True  # Until MQTT confirms
@@ -456,6 +459,7 @@ class RVCSlide(AvailabilityMixin, CoverEntity):
             "warning": "CAUTION: Motor control - ensure area is clear!",
             "last_command": None,
             "last_mqtt_update": None,
+            "command_pending": None,
         }
 
         _LOGGER.info(
@@ -492,16 +496,8 @@ class RVCSlide(AvailabilityMixin, CoverEntity):
             self._slide_id, instance, payload
         )
 
-        # Disable assumed_state on first MQTT message
-        if self._attr_assumed_state:
-            _LOGGER.info(
-                "Slide %s received first MQTT status - state now confirmed",
-                self._slide_id
-            )
-            self._attr_assumed_state = False
-
-        # Track last update time
-        self.mark_seen_now()
+        state_confirmed = False
+        confirmed_action: str | None = None
 
         # Determine state from brightness/operating status
         if "operating status (brightness)" in payload:
@@ -509,16 +505,20 @@ class RVCSlide(AvailabilityMixin, CoverEntity):
                 brightness = float(payload["operating status (brightness)"])
                 # If extend instance is active (>0), slide is extending
                 if instance == self._extend_instance:
+                    state_confirmed = True
                     if brightness > 0:
                         self._attr_is_opening = True
                         self._attr_is_closing = False
+                        confirmed_action = "open"
                     else:
                         self._attr_is_opening = False
                 # If retract instance is active (>0), slide is retracting
                 elif instance == self._retract_instance:
+                    state_confirmed = True
                     if brightness > 0:
                         self._attr_is_closing = True
                         self._attr_is_opening = False
+                        confirmed_action = "close"
                     else:
                         self._attr_is_closing = False
             except (TypeError, ValueError):
@@ -535,6 +535,13 @@ class RVCSlide(AvailabilityMixin, CoverEntity):
         if "timestamp" in payload:
             attrs["last_mqtt_update"] = payload["timestamp"]
 
+        if state_confirmed:
+            self.mark_seen_now()
+            self._attr_assumed_state = False
+            pending = attrs.get("command_pending")
+            if isinstance(pending, dict) and pending.get("type") == confirmed_action:
+                attrs["command_pending"] = None
+
         self.async_write_ha_state()
 
     async def async_open_cover(self, **kwargs: Any) -> None:
@@ -547,10 +554,6 @@ class RVCSlide(AvailabilityMixin, CoverEntity):
             "SLIDE MOTOR: %s extending - ensure area is clear!",
             self._attr_name
         )
-
-        self._attr_is_opening = True
-        self._attr_is_closing = False
-        self._attr_is_closed = False
 
         instance = self._extend_instance
         command = 2
@@ -566,6 +569,7 @@ class RVCSlide(AvailabilityMixin, CoverEntity):
             brightness,
         )
 
+        self._attr_extra_state_attributes["command_pending"] = {"type": "open"}
         self.async_write_ha_state()
 
     async def async_close_cover(self, **kwargs: Any) -> None:
@@ -578,9 +582,6 @@ class RVCSlide(AvailabilityMixin, CoverEntity):
             "SLIDE MOTOR: %s retracting - ensure area is clear!",
             self._attr_name
         )
-
-        self._attr_is_closing = True
-        self._attr_is_opening = False
 
         instance = self._retract_instance
         command = 2
@@ -596,4 +597,5 @@ class RVCSlide(AvailabilityMixin, CoverEntity):
             brightness,
         )
 
+        self._attr_extra_state_attributes["command_pending"] = {"type": "close"}
         self.async_write_ha_state()
