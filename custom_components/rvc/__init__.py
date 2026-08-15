@@ -5,7 +5,6 @@ import logging
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.typing import ConfigType
 
 from .const import (
     CONF_AUTO_DISCOVERY,
@@ -24,11 +23,6 @@ from .const import (
 from .mqtt_handler import RVCMQTTHandler
 
 _LOGGER = logging.getLogger(__name__)
-
-
-async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
-    """Set up from YAML (currently unused, but kept for compatibility)."""
-    return True
 
 
 async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
