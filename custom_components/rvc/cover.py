@@ -243,7 +243,9 @@ class RVCAwning(AvailabilityMixin, CoverEntity):
         self._attr_is_closed = None
         self._attr_is_closing = False
         self._attr_is_opening = False
-        self._attr_assumed_state = True  # Until MQTT confirms
+        # Relay telemetry confirms motion only. Without position/limit feedback,
+        # the open/closed endpoint must remain assumed and unknown.
+        self._attr_assumed_state = True
 
         # Store instance numbers as extra state attributes
         self._attr_extra_state_attributes = {
@@ -338,7 +340,6 @@ class RVCAwning(AvailabilityMixin, CoverEntity):
 
         if state_confirmed:
             self.mark_seen_now()
-            self._attr_assumed_state = False
             pending = attrs.get("command_pending")
             if isinstance(pending, dict) and pending.get("type") == confirmed_action:
                 attrs["command_pending"] = None
@@ -448,7 +449,9 @@ class RVCSlide(AvailabilityMixin, CoverEntity):
         self._attr_is_closed = None
         self._attr_is_closing = False
         self._attr_is_opening = False
-        self._attr_assumed_state = True  # Until MQTT confirms
+        # Relay telemetry confirms motion only. Without position/limit feedback,
+        # the open/closed endpoint must remain assumed and unknown.
+        self._attr_assumed_state = True
 
         # Store instance numbers as extra state attributes
         self._attr_extra_state_attributes = {
@@ -537,7 +540,6 @@ class RVCSlide(AvailabilityMixin, CoverEntity):
 
         if state_confirmed:
             self.mark_seen_now()
-            self._attr_assumed_state = False
             pending = attrs.get("command_pending")
             if isinstance(pending, dict) and pending.get("type") == confirmed_action:
                 attrs["command_pending"] = None

@@ -10,8 +10,12 @@
 - Standard RV-C unavailable/error sentinels (`0xFF` and `0xFFFF`) now map to
   unknown values, including battery time remaining `65535`.
 - MQTT publish success no longer changes observed light, switch, Aqua-Hot,
-  lock, cover, or climate state. Commands expose pending intent until a status
-  message confirms physical state.
+  lock, cover, or climate state. Commands expose pending intent until matching
+  status telemetry confirms the requested action.
+- Awning and slide relay status now reports opening/closing only while confirmed
+  motion is active. Because the bridge provides no position or limit feedback,
+  stopped covers intentionally return to an assumed unknown endpoint instead of
+  inventing an open or closed state from relay deactivation.
 - `THERMOSTAT_AMBIENT_STATUS` is correlated into the matching climate zone.
   Heat-only zones expose only off/heat with no fan mode.
 - AC load operating percentage is now a plain percentage measurement instead

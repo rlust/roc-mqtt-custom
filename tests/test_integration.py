@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from homeassistant.config_entries import ConfigEntryState
-from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
+from homeassistant.const import STATE_CLOSING, STATE_OPENING, STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.util import dt as dt_util
@@ -329,3 +329,143 @@ async def test_command_publish_does_not_confirm_switch_state(hass: HomeAssistant
     state = hass.states.get("switch.water_pump")
     assert state.state == "off"
     assert state.attributes["command_pending"] is None
+
+
+async def test_awning_reports_confirmed_motion_without_inventing_endpoints(hass: HomeAssistant, loaded_entry) -> None:
+    """Awning relay telemetry confirms motion, never an open/closed endpoint."""
+    _, publish, _ = loaded_entry
+    entity_id = "cover.rear_awning"
+
+    state = hass.states.get(entity_id)
+    assert state is not None
+    assert state.state == STATE_UNAVAILABLE
+
+    # An inactive relay is valid/fresh telemetry, but it does not prove position.
+    async_dispatcher_send(
+        hass,
+        SIGNAL_DISCOVERY,
+        {
+            "type": "light",
+            "instance": "19",
+            "payload": {
+                "name": "DC_DIMMER_STATUS_3",
+                "instance": 19,
+                "operating status (brightness)": 0,
+            },
+        },
+    )
+    await hass.async_block_till_done()
+    state = hass.states.get(entity_id)
+    assert state.state == STATE_UNKNOWN
+    assert state.attributes["assumed_state"] is True
+
+    await hass.services.async_call("cover", "open_cover", {"entity_id": entity_id}, blocking=True)
+    state = hass.states.get(entity_id)
+    assert state.state == STATE_UNKNOWN
+    assert state.attributes["command_pending"] == {"type": "open"}
+    publish.assert_awaited()
+
+    # Zero/unrelated traffic neither confirms the requested motion nor clears it.
+    async_dispatcher_send(
+        hass,
+        SIGNAL_DISCOVERY,
+        {
+            "type": "light",
+            "instance": "20",
+            "payload": {
+                "name": "DC_DIMMER_STATUS_3",
+                "instance": 20,
+                "operating status (brightness)": 0,
+            },
+        },
+    )
+    await hass.async_block_till_done()
+    state = hass.states.get(entity_id)
+    assert state.state == STATE_UNKNOWN
+    assert state.attributes["command_pending"] == {"type": "open"}
+
+    # Matching active relay telemetry confirms motion and clears matching intent.
+    async_dispatcher_send(
+        hass,
+        SIGNAL_DISCOVERY,
+        {
+            "type": "light",
+            "instance": "19",
+            "payload": {
+                "name": "DC_DIMMER_STATUS_3",
+                "instance": 19,
+                "operating status (brightness)": 100,
+            },
+        },
+    )
+    await hass.async_block_till_done()
+    state = hass.states.get(entity_id)
+    assert state.state == STATE_OPENING
+    assert state.attributes["command_pending"] is None
+
+    # Relay-off confirms only that motion stopped, not that the awning is open.
+    async_dispatcher_send(
+        hass,
+        SIGNAL_DISCOVERY,
+        {
+            "type": "light",
+            "instance": "19",
+            "payload": {
+                "name": "DC_DIMMER_STATUS_3",
+                "instance": 19,
+                "operating status (brightness)": 0,
+            },
+        },
+    )
+    await hass.async_block_till_done()
+    state = hass.states.get(entity_id)
+    assert state.state == STATE_UNKNOWN
+    assert state.attributes["assumed_state"] is True
+
+    publish.reset_mock()
+    await hass.services.async_call("cover", "close_cover", {"entity_id": entity_id}, blocking=True)
+    state = hass.states.get(entity_id)
+    assert state.state == STATE_UNKNOWN
+    assert state.attributes["command_pending"] == {"type": "close"}
+    publish.assert_awaited()
+
+    async_dispatcher_send(
+        hass,
+        SIGNAL_DISCOVERY,
+        {
+            "type": "light",
+            "instance": "20",
+            "payload": {
+                "name": "DC_DIMMER_STATUS_3",
+                "instance": 20,
+                "operating status (brightness)": 100,
+            },
+        },
+    )
+    await hass.async_block_till_done()
+    state = hass.states.get(entity_id)
+    assert state.state == STATE_CLOSING
+    assert state.attributes["command_pending"] is None
+
+    async_dispatcher_send(
+        hass,
+        SIGNAL_DISCOVERY,
+        {
+            "type": "light",
+            "instance": "20",
+            "payload": {
+                "name": "DC_DIMMER_STATUS_3",
+                "instance": 20,
+                "operating status (brightness)": 0,
+            },
+        },
+    )
+    await hass.async_block_till_done()
+    state = hass.states.get(entity_id)
+    assert state.state == STATE_UNKNOWN
+    assert state.attributes["assumed_state"] is True
+
+    with patch("custom_components.rvc.availability.time.time", return_value=time.time() + 301):
+        async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=301), fire_all=True)
+        await hass.async_block_till_done()
+    assert hass.states.get(entity_id).state == STATE_UNAVAILABLE
