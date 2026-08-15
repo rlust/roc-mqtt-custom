@@ -10,6 +10,7 @@
   ],
   "documentation": "https://github.com/rlust/roc-mqtt-custom",
   "iot_class": "local_push",
+  "issue_tracker": "https://github.com/rlust/roc-mqtt-custom/issues",
   "requirements": [],
   "version": "2.5.1"
 }
