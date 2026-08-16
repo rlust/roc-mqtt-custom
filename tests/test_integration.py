@@ -7,13 +7,20 @@ from datetime import timedelta
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
+from homeassistant.components.device_tracker import TrackerEntity
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import STATE_CLOSING, STATE_OPENING, STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import MockConfigEntry, async_fire_time_changed
 
+from custom_components.rvc.climate import (
+    TEMP_DOWN_SUFFIX,
+    TEMP_UP_SUFFIX,
+    RVCClimate,
+)
 from custom_components.rvc.const import (
     CONF_AUTO_DISCOVERY,
     CONF_AVAILABILITY_TIMEOUT,
@@ -24,6 +31,8 @@ from custom_components.rvc.const import (
     DOMAIN,
     SIGNAL_DISCOVERY,
 )
+from custom_components.rvc.device_tracker import RVCGPSTracker
+from custom_components.rvc.light import RVCLight
 from custom_components.rvc.sensor import _extract_sensor_definitions
 
 pytestmark = pytest.mark.usefixtures("enable_custom_integrations")
@@ -198,6 +207,186 @@ async def test_dynamic_sensor_availability_and_sentinel(hass: HomeAssistant, loa
     await hass.async_block_till_done()
     assert hass.states.get("sensor.fresh_water_tank_level").state == STATE_UNAVAILABLE
     assert hass.states.get("sensor.generic_measurement").state == "255"
+
+
+async def test_rapid_dynamic_sensor_discovery_keeps_newest_payload(hass: HomeAssistant, loaded_entry) -> None:
+    """Repeated discovery before entity attachment preserves the newest value."""
+    for value in (10, 20, 30):
+        async_dispatcher_send(
+            hass,
+            SIGNAL_DISCOVERY,
+            {
+                "type": "sensor",
+                "instance": "98",
+                "payload": {
+                    "name": "Rapid Measurement",
+                    "instance": 98,
+                    "value": value,
+                    "unit": "%",
+                },
+            },
+        )
+
+    await hass.async_block_till_done()
+    state = hass.states.get("sensor.rapid_measurement")
+    assert state is not None
+    assert state.state == "30"
+
+    async_dispatcher_send(
+        hass,
+        SIGNAL_DISCOVERY,
+        {
+            "type": "sensor",
+            "instance": "98",
+            "payload": {
+                "name": "Rapid Measurement",
+                "instance": 98,
+                "value": 40,
+                "unit": "%",
+            },
+        },
+    )
+    await hass.async_block_till_done()
+    assert hass.states.get("sensor.rapid_measurement").state == "40"
+
+
+async def test_rapid_gps_discovery_keeps_newest_payload(hass: HomeAssistant, loaded_entry) -> None:
+    """GPS updates may race entity attachment without losing the newest fix."""
+    for latitude, longitude in ((26.10, -81.70), (26.20, -81.80)):
+        async_dispatcher_send(
+            hass,
+            SIGNAL_DISCOVERY,
+            {
+                "type": "device_tracker",
+                "instance": "gps",
+                "payload": {
+                    "lat": latitude,
+                    "lon": longitude,
+                    "mode": 3,
+                },
+            },
+        )
+
+    await hass.async_block_till_done()
+    state = hass.states.get("device_tracker.rv_gps")
+    assert state is not None
+    assert state.attributes["latitude"] == pytest.approx(26.20)
+    assert state.attributes["longitude"] == pytest.approx(-81.80)
+
+    async_dispatcher_send(
+        hass,
+        SIGNAL_DISCOVERY,
+        {
+            "type": "device_tracker",
+            "instance": "gps",
+            "payload": {"lat": 26.30, "lon": -81.90, "mode": 3},
+        },
+    )
+    await hass.async_block_till_done()
+    state = hass.states.get("device_tracker.rv_gps")
+    assert state.attributes["latitude"] == pytest.approx(26.30)
+    assert state.attributes["longitude"] == pytest.approx(-81.90)
+
+
+async def test_parent_device_exists_before_child_registration(hass: HomeAssistant, loaded_entry) -> None:
+    """Every RV-C child device resolves its stable main-controller parent."""
+    registry = dr.async_get(hass)
+    parent = registry.async_get_device(identifiers={(DOMAIN, "main_controller")})
+    assert parent is not None
+
+    child_devices = [
+        device
+        for device in registry.devices.values()
+        if device.id != parent.id and any(identifier[0] == DOMAIN for identifier in device.identifiers)
+    ]
+    assert child_devices
+    assert all(device.via_device_id == parent.id for device in child_devices)
+
+
+async def test_custom_entity_services_register_and_invoke(hass: HomeAssistant, loaded_entry) -> None:
+    """Custom light and climate services accept HA entity targets and invoke entities."""
+    async_dispatcher_send(
+        hass,
+        SIGNAL_DISCOVERY,
+        {
+            "type": "light",
+            "instance": "35",
+            "payload": {
+                "name": "DC_DIMMER_STATUS_3",
+                "instance": 35,
+                "operating status (brightness)": 50,
+            },
+        },
+    )
+    async_dispatcher_send(
+        hass,
+        SIGNAL_DISCOVERY,
+        {
+            "type": "climate",
+            "instance": "0",
+            "payload": {
+                "name": "THERMOSTAT_STATUS_1",
+                "instance": 0,
+                "operating mode definition": "cool",
+                "setpoint temp cool F": 72.0,
+                "fan mode definition": "auto",
+            },
+        },
+    )
+    await hass.async_block_till_done()
+
+    for service in (
+        "ramp_up",
+        "ramp_down",
+        "step_temperature_up",
+        "step_temperature_down",
+        "set_fan_profile",
+    ):
+        assert hass.services.has_service(DOMAIN, service)
+
+    with (
+        patch.object(RVCLight, "_async_send_ramp_command", new_callable=AsyncMock) as ramp,
+        patch.object(RVCClimate, "_async_publish_signature", new_callable=AsyncMock) as step,
+        patch.object(RVCClimate, "async_set_fan_mode", new_callable=AsyncMock) as fan,
+    ):
+        await hass.services.async_call(
+            DOMAIN,
+            "ramp_up",
+            {"entity_id": "light.entry_ceiling", "duration": 5},
+            blocking=True,
+        )
+        await hass.services.async_call(
+            DOMAIN,
+            "ramp_down",
+            {"entity_id": "light.entry_ceiling", "duration": 6},
+            blocking=True,
+        )
+        await hass.services.async_call(
+            DOMAIN,
+            "step_temperature_up",
+            {"entity_id": "climate.ac_front"},
+            blocking=True,
+        )
+        await hass.services.async_call(
+            DOMAIN,
+            "step_temperature_down",
+            {"entity_id": "climate.ac_front"},
+            blocking=True,
+        )
+        await hass.services.async_call(
+            DOMAIN,
+            "set_fan_profile",
+            {"entity_id": "climate.ac_front", "fan_profile": "low"},
+            blocking=True,
+        )
+
+    assert [call.args for call in ramp.await_args_list] == [(5, 19), (6, 20)]
+    assert [call.args[0] for call in step.await_args_list] == [
+        TEMP_UP_SUFFIX,
+        TEMP_DOWN_SUFFIX,
+    ]
+    fan.assert_awaited_once_with("low")
+    assert issubclass(RVCGPSTracker, TrackerEntity)
 
 
 async def test_climate_ambient_correlation_and_heat_only_shape(hass: HomeAssistant, loaded_entry) -> None:

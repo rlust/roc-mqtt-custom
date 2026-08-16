@@ -4,8 +4,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from homeassistant.components.device_tracker import SourceType
-from homeassistant.components.device_tracker.config_entry import TrackerEntity
+from homeassistant.components.device_tracker import SourceType, TrackerEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
@@ -190,4 +189,5 @@ class RVCGPSTracker(AvailabilityMixin, TrackerEntity):
             eps = float(payload["eps"])
             self._attr_extra_state_attributes["speed_error"] = f"{eps:.2f} m/s"
 
-        self.async_write_ha_state()
+        if self.hass is not None:
+            self.async_write_ha_state()

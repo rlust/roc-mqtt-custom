@@ -46,15 +46,13 @@ _LOGGER = logging.getLogger(__name__)
 
 
 
-def _duration_schema(min_seconds: int = 1, max_seconds: int = 60) -> vol.Schema:
-    return vol.Schema(
-        {
-            vol.Required("duration"): vol.All(
-                vol.Coerce(int),
-                vol.Range(min=min_seconds, max=max_seconds),
-            )
-        }
-    )
+def _duration_schema(min_seconds: int = 1, max_seconds: int = 60) -> dict:
+    return {
+        vol.Required("duration"): vol.All(
+            vol.Coerce(int),
+            vol.Range(min=min_seconds, max=max_seconds),
+        )
+    }
 
 
 async def async_setup_entry(
