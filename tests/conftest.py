@@ -7,9 +7,16 @@ import sys
 import warnings
 from pathlib import Path
 
+from homeassistant.components import http as ha_http
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 pytest_plugins = "pytest_homeassistant_custom_component"
+
+# The custom-component fixture still patches this removed HA 2026.8 symbol.
+# Restoring a placeholder lets that fixture preserve its no-HTTP-server contract.
+if not hasattr(ha_http, "start_http_server_and_save_config"):
+    ha_http.start_http_server_and_save_config = None
 
 
 def pytest_runtest_setup() -> None:
