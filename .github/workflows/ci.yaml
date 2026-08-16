@@ -51,7 +51,7 @@ jobs:
       - name: Install HA-native test harness
         run: |
           python -m venv --system-site-packages /tmp/rvc-test
-          /tmp/rvc-test/bin/pip install --no-deps pytest-homeassistant-custom-component==0.13.316
+          /tmp/rvc-test/bin/pip install --no-deps pytest-homeassistant-custom-component==0.13.356
           /tmp/rvc-test/bin/python - <<'PY'
           from importlib.metadata import requires
           from packaging.requirements import Requirement
