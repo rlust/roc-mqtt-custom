@@ -12,6 +12,7 @@ from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import STATE_CLOSING, STATE_OPENING, STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import MockConfigEntry, async_fire_time_changed
@@ -36,6 +37,13 @@ from custom_components.rvc.light import RVCLight
 from custom_components.rvc.sensor import _extract_sensor_definitions
 
 pytestmark = pytest.mark.usefixtures("enable_custom_integrations")
+
+
+def _entity_id(hass: HomeAssistant, domain: str, unique_id: str) -> str:
+    """Resolve an entity through its integration-stable registry identity."""
+    entity_id = er.async_get(hass).async_get_entity_id(domain, DOMAIN, unique_id)
+    assert entity_id is not None
+    return entity_id
 
 
 def test_ac_load_operating_status_is_a_percentage_not_power_factor() -> None:
@@ -87,8 +95,8 @@ async def test_setup_unload_and_reload(hass: HomeAssistant, loaded_entry) -> Non
     entry, _, unsubscribe = loaded_entry
     assert entry.state is ConfigEntryState.LOADED
     assert DOMAIN in hass.data
-    assert hass.states.get("switch.aqua_hot_electric").state == STATE_UNAVAILABLE
-    assert hass.states.get("switch.water_pump").state == STATE_UNAVAILABLE
+    assert hass.states.get(_entity_id(hass, "switch", "rvc_acload_212")).state == STATE_UNAVAILABLE
+    assert hass.states.get(_entity_id(hass, "switch", "rvc_switch_16")).state == STATE_UNAVAILABLE
 
     assert await hass.config_entries.async_reload(entry.entry_id)
     await hass.async_block_till_done()
@@ -98,6 +106,39 @@ async def test_setup_unload_and_reload(hass: HomeAssistant, loaded_entry) -> Non
     assert await hass.config_entries.async_unload(entry.entry_id)
     await hass.async_block_till_done()
     assert entry.state is ConfigEntryState.NOT_LOADED
+
+
+async def test_existing_entity_ids_survive_setup_and_reload(hass: HomeAssistant, rvc_entry: MockConfigEntry) -> None:
+    """Representative Aspire entity IDs remain unchanged across an HA 2026.8 load."""
+    rvc_entry.add_to_hass(hass)
+    registry = er.async_get(hass)
+    expected = {
+        ("light", "rvc_light_35"): "light.entry_ceiling",
+        ("climate", "rvc_climate_0"): "climate.ac_front",
+        ("switch", "rvc_switch_16"): "switch.water_pump",
+        ("cover", "rvc_awning_rear_awning"): "cover.rear_awning",
+    }
+    for (entity_domain, unique_id), entity_id in expected.items():
+        entry = registry.async_get_or_create(
+            entity_domain,
+            DOMAIN,
+            unique_id,
+            suggested_object_id=entity_id.split(".", 1)[1],
+            config_entry=rvc_entry,
+        )
+        assert entry.entity_id == entity_id
+
+    with (
+        patch("homeassistant.components.mqtt.async_subscribe", AsyncMock(return_value=Mock())),
+        patch("homeassistant.components.mqtt.async_publish", AsyncMock()),
+    ):
+        assert await hass.config_entries.async_setup(rvc_entry.entry_id)
+        await hass.async_block_till_done()
+        assert {key: _entity_id(hass, *key) for key in expected} == expected
+
+        assert await hass.config_entries.async_reload(rvc_entry.entry_id)
+        await hass.async_block_till_done()
+        assert {key: _entity_id(hass, *key) for key in expected} == expected
 
 
 async def test_config_and_options_flow(hass: HomeAssistant) -> None:
@@ -135,7 +176,8 @@ async def test_dynamic_sensor_availability_and_sentinel(hass: HomeAssistant, loa
     )
     await hass.async_block_till_done()
 
-    state = hass.states.get("sensor.battery_1_time_remaining")
+    battery_time_id = _entity_id(hass, "sensor", "rvc_battery_1_time_remaining")
+    state = hass.states.get(battery_time_id)
     assert state is not None
     assert state.state == STATE_UNAVAILABLE
 
@@ -153,7 +195,7 @@ async def test_dynamic_sensor_availability_and_sentinel(hass: HomeAssistant, loa
         },
     )
     await hass.async_block_till_done()
-    assert hass.states.get("sensor.battery_1_time_remaining").state == "125"
+    assert hass.states.get(battery_time_id).state == "125"
 
     async_dispatcher_send(
         hass,
@@ -169,12 +211,12 @@ async def test_dynamic_sensor_availability_and_sentinel(hass: HomeAssistant, loa
         },
     )
     await hass.async_block_till_done()
-    assert hass.states.get("sensor.battery_1_time_remaining").state == STATE_UNKNOWN
+    assert hass.states.get(battery_time_id).state == STATE_UNKNOWN
 
     with patch("custom_components.rvc.availability.time.time", return_value=time.time() + 301):
         async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=301), fire_all=True)
         await hass.async_block_till_done()
-    assert hass.states.get("sensor.battery_1_time_remaining").state == STATE_UNAVAILABLE
+    assert hass.states.get(battery_time_id).state == STATE_UNAVAILABLE
 
     async_dispatcher_send(
         hass,
@@ -205,8 +247,8 @@ async def test_dynamic_sensor_availability_and_sentinel(hass: HomeAssistant, loa
         },
     )
     await hass.async_block_till_done()
-    assert hass.states.get("sensor.fresh_water_tank_level").state == STATE_UNAVAILABLE
-    assert hass.states.get("sensor.generic_measurement").state == "255"
+    assert hass.states.get(_entity_id(hass, "sensor", "rvc_sensor_8")).state == STATE_UNAVAILABLE
+    assert hass.states.get(_entity_id(hass, "sensor", "rvc_sensor_99")).state == "255"
 
 
 async def test_rapid_dynamic_sensor_discovery_keeps_newest_payload(hass: HomeAssistant, loaded_entry) -> None:
@@ -228,7 +270,8 @@ async def test_rapid_dynamic_sensor_discovery_keeps_newest_payload(hass: HomeAss
         )
 
     await hass.async_block_till_done()
-    state = hass.states.get("sensor.rapid_measurement")
+    entity_id = _entity_id(hass, "sensor", "rvc_sensor_98")
+    state = hass.states.get(entity_id)
     assert state is not None
     assert state.state == "30"
 
@@ -247,7 +290,7 @@ async def test_rapid_dynamic_sensor_discovery_keeps_newest_payload(hass: HomeAss
         },
     )
     await hass.async_block_till_done()
-    assert hass.states.get("sensor.rapid_measurement").state == "40"
+    assert hass.states.get(entity_id).state == "40"
 
 
 async def test_rapid_gps_discovery_keeps_newest_payload(hass: HomeAssistant, loaded_entry) -> None:
@@ -268,7 +311,8 @@ async def test_rapid_gps_discovery_keeps_newest_payload(hass: HomeAssistant, loa
         )
 
     await hass.async_block_till_done()
-    state = hass.states.get("device_tracker.rv_gps")
+    entity_id = _entity_id(hass, "device_tracker", "rvc_gps_tracker")
+    state = hass.states.get(entity_id)
     assert state is not None
     assert state.attributes["latitude"] == pytest.approx(26.20)
     assert state.attributes["longitude"] == pytest.approx(-81.80)
@@ -283,7 +327,7 @@ async def test_rapid_gps_discovery_keeps_newest_payload(hass: HomeAssistant, loa
         },
     )
     await hass.async_block_till_done()
-    state = hass.states.get("device_tracker.rv_gps")
+    state = hass.states.get(entity_id)
     assert state.attributes["latitude"] == pytest.approx(26.30)
     assert state.attributes["longitude"] == pytest.approx(-81.90)
 
@@ -335,6 +379,9 @@ async def test_custom_entity_services_register_and_invoke(hass: HomeAssistant, l
     )
     await hass.async_block_till_done()
 
+    light_entity_id = _entity_id(hass, "light", "rvc_light_35")
+    climate_entity_id = _entity_id(hass, "climate", "rvc_climate_0")
+
     for service in (
         "ramp_up",
         "ramp_down",
@@ -352,31 +399,31 @@ async def test_custom_entity_services_register_and_invoke(hass: HomeAssistant, l
         await hass.services.async_call(
             DOMAIN,
             "ramp_up",
-            {"entity_id": "light.entry_ceiling", "duration": 5},
+            {"entity_id": light_entity_id, "duration": 5},
             blocking=True,
         )
         await hass.services.async_call(
             DOMAIN,
             "ramp_down",
-            {"entity_id": "light.entry_ceiling", "duration": 6},
+            {"entity_id": light_entity_id, "duration": 6},
             blocking=True,
         )
         await hass.services.async_call(
             DOMAIN,
             "step_temperature_up",
-            {"entity_id": "climate.ac_front"},
+            {"entity_id": climate_entity_id},
             blocking=True,
         )
         await hass.services.async_call(
             DOMAIN,
             "step_temperature_down",
-            {"entity_id": "climate.ac_front"},
+            {"entity_id": climate_entity_id},
             blocking=True,
         )
         await hass.services.async_call(
             DOMAIN,
             "set_fan_profile",
-            {"entity_id": "climate.ac_front", "fan_profile": "low"},
+            {"entity_id": climate_entity_id, "fan_profile": "low"},
             blocking=True,
         )
 
@@ -406,7 +453,7 @@ async def test_climate_ambient_correlation_and_heat_only_shape(hass: HomeAssista
     )
     await hass.async_block_till_done()
 
-    state = hass.states.get("climate.front_heat_aqua_hot")
+    state = hass.states.get(_entity_id(hass, "climate", "rvc_climate_3"))
     assert state is not None
     assert state.state == STATE_UNKNOWN
     assert state.attributes["current_temperature"] == pytest.approx(21.9)
@@ -433,14 +480,15 @@ async def test_unrelated_climate_telemetry_keeps_command_pending(hass: HomeAssis
     )
     await hass.async_block_till_done()
 
-    prior_target = hass.states.get("climate.ac_front").attributes["temperature"]
+    entity_id = _entity_id(hass, "climate", "rvc_climate_0")
+    prior_target = hass.states.get(entity_id).attributes["temperature"]
     await hass.services.async_call(
         "climate",
         "set_temperature",
-        {"entity_id": "climate.ac_front", "temperature": prior_target},
+        {"entity_id": entity_id, "temperature": prior_target},
         blocking=True,
     )
-    pending = hass.states.get("climate.ac_front").attributes["command_pending"]
+    pending = hass.states.get(entity_id).attributes["command_pending"]
     assert pending["type"] == "temperature"
 
     async_dispatcher_send(
@@ -457,7 +505,7 @@ async def test_unrelated_climate_telemetry_keeps_command_pending(hass: HomeAssis
         },
     )
     await hass.async_block_till_done()
-    assert hass.states.get("climate.ac_front").attributes["command_pending"] == pending
+    assert hass.states.get(entity_id).attributes["command_pending"] == pending
 
 
 async def test_command_publish_does_not_confirm_switch_state(hass: HomeAssistant, loaded_entry) -> None:
@@ -477,10 +525,11 @@ async def test_command_publish_does_not_confirm_switch_state(hass: HomeAssistant
         },
     )
     await hass.async_block_till_done()
-    assert hass.states.get("switch.water_pump").state == "on"
+    entity_id = _entity_id(hass, "switch", "rvc_switch_16")
+    assert hass.states.get(entity_id).state == "on"
 
-    await hass.services.async_call("switch", "turn_off", {"entity_id": "switch.water_pump"}, blocking=True)
-    state = hass.states.get("switch.water_pump")
+    await hass.services.async_call("switch", "turn_off", {"entity_id": entity_id}, blocking=True)
+    state = hass.states.get(entity_id)
     assert state.state == "on"
     assert state.attributes["command_pending"] == {"type": "turn_off"}
     publish.assert_awaited()
@@ -499,7 +548,7 @@ async def test_command_publish_does_not_confirm_switch_state(hass: HomeAssistant
         },
     )
     await hass.async_block_till_done()
-    assert hass.states.get("switch.water_pump").attributes["command_pending"] == {"type": "turn_off"}
+    assert hass.states.get(entity_id).attributes["command_pending"] == {"type": "turn_off"}
 
     async_dispatcher_send(
         hass,
@@ -515,7 +564,7 @@ async def test_command_publish_does_not_confirm_switch_state(hass: HomeAssistant
         },
     )
     await hass.async_block_till_done()
-    state = hass.states.get("switch.water_pump")
+    state = hass.states.get(entity_id)
     assert state.state == "off"
     assert state.attributes["command_pending"] is None
 
@@ -523,7 +572,7 @@ async def test_command_publish_does_not_confirm_switch_state(hass: HomeAssistant
 async def test_awning_reports_confirmed_motion_without_inventing_endpoints(hass: HomeAssistant, loaded_entry) -> None:
     """Awning relay telemetry confirms motion, never an open/closed endpoint."""
     _, publish, _ = loaded_entry
-    entity_id = "cover.rear_awning"
+    entity_id = _entity_id(hass, "cover", "rvc_awning_rear_awning")
 
     state = hass.states.get(entity_id)
     assert state is not None
