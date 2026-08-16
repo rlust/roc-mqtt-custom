@@ -157,7 +157,7 @@ async def async_setup_entry(
     platform.async_register_entity_service("step_temperature_down", {}, "async_step_temperature_down")
     platform.async_register_entity_service(
         "set_fan_profile",
-        vol.Schema({vol.Required("fan_profile"): vol.In(["auto", "low", "high"])}),
+        {vol.Required("fan_profile"): vol.In(["auto", "low", "high"])},
         "async_set_fan_profile",
     )
 

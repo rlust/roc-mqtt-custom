@@ -5,6 +5,7 @@ import logging
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import device_registry as dr
 
 from .const import (
     CONF_AUTO_DISCOVERY,
@@ -47,6 +48,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     _LOGGER.info("Setting up RVC integration entry %s", entry.entry_id)
 
     config = _ensure_entry_options(hass, entry)
+
+    dr.async_get(hass).async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, "main_controller")},
+        name="RV-C Main Controller",
+        manufacturer="RV-C",
+        model="MQTT/CAN Bridge",
+    )
 
     handler = RVCMQTTHandler(hass, config)
     await handler.async_subscribe()

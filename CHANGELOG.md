@@ -1,5 +1,23 @@
 # Changelog
 
+## v2.5.2 (2026-08-16) — Home Assistant 2026.8 compatibility
+
+### Fixed
+
+- Dynamic sensor and GPS discovery now retains the newest payload while Home
+  Assistant attaches a new entity, without attempting a premature state write.
+- Light ramp and climate step/fan-profile entity services now use Home
+  Assistant's entity-target schema contract.
+- The integration creates its stable RV-C main-controller parent device before
+  child platforms are set up, so every existing `via_device` reference resolves.
+- The GPS tracker now imports the supported public `TrackerEntity` API.
+
+### Tests
+
+- Added Home Assistant-native regressions for rapid sensor/GPS discovery,
+  entity-service registration and invocation, parent-device validity, tracker
+  setup, and unload/reload while retaining the v2.5.1 state-truth suite.
+
 ## v2.5.1 (2026-08-15) — Evidence-driven state
 
 ### Fixed

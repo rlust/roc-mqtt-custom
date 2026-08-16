@@ -38,6 +38,47 @@ jobs:
       - name: Run tests
         run: pytest tests/ -v
 
+  test-ha-2026-8:
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/home-assistant/home-assistant:2026.8.2@sha256:6e8225ea9de2cfe9292b634e554ebbf439118ca0c823221d794298e7a74404bb
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify Home Assistant runtime
+        run: >-
+          python -c "from importlib.metadata import version;
+          assert version('homeassistant') == '2026.8.2'"
+      - name: Install HA-native test harness
+        run: |
+          python -m venv --system-site-packages /tmp/rvc-test
+          /tmp/rvc-test/bin/pip install --no-deps pytest-homeassistant-custom-component==0.13.316
+          /tmp/rvc-test/bin/python - <<'PY'
+          from importlib.metadata import requires
+          from packaging.requirements import Requirement
+          from packaging.utils import canonicalize_name
+          import subprocess
+          import sys
+
+          keep_runtime = {
+              "homeassistant",
+              "numpy",
+              "paho-mqtt",
+              "pydantic",
+          }
+          dependencies = []
+          for raw_requirement in requires("pytest-homeassistant-custom-component") or []:
+              requirement = Requirement(raw_requirement)
+              if canonicalize_name(requirement.name) in keep_runtime:
+                  continue
+              if requirement.marker is None or requirement.marker.evaluate():
+                  dependencies.append(str(requirement))
+          subprocess.check_call(
+              [sys.executable, "-m", "pip", "install", *dependencies]
+          )
+          PY
+      - name: Run tests on Home Assistant 2026.8.2
+        run: /tmp/rvc-test/bin/pytest tests/ -v
+
   hassfest:
     runs-on: ubuntu-latest
     steps:
