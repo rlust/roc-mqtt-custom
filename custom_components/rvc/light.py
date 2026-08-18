@@ -24,8 +24,8 @@ from .availability import AvailabilityMixin
 from .const import (
     BATHROOM_AREA_LIGHTS,
     BEDROOM_AREA_LIGHTS,
-    CONF_AVAILABILITY_TIMEOUT,
     CONF_COMMAND_TOPIC,
+    CONF_LIGHT_AVAILABILITY_TIMEOUT,
     CONF_TOPIC_PREFIX,
     DEFAULT_COMMAND_TOPIC,
     DEFAULT_LIGHT_AVAILABILITY_TIMEOUT,
@@ -67,7 +67,11 @@ async def async_setup_entry(
     topic_prefix = _get_entry_option(entry, CONF_TOPIC_PREFIX, DEFAULT_TOPIC_PREFIX)
     command_topic = _get_entry_option(entry, CONF_COMMAND_TOPIC, DEFAULT_COMMAND_TOPIC)
     availability_timeout = _coerce_int(
-        _get_entry_option(entry, CONF_AVAILABILITY_TIMEOUT, DEFAULT_LIGHT_AVAILABILITY_TIMEOUT),
+        _get_entry_option(
+            entry,
+            CONF_LIGHT_AVAILABILITY_TIMEOUT,
+            DEFAULT_LIGHT_AVAILABILITY_TIMEOUT,
+        ),
         DEFAULT_LIGHT_AVAILABILITY_TIMEOUT,
     )
 

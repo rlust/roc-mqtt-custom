@@ -12,6 +12,7 @@ from .const import (
     CONF_AVAILABILITY_TIMEOUT,
     CONF_COMMAND_TOPIC,
     CONF_GPS_TOPIC,
+    CONF_LIGHT_AVAILABILITY_TIMEOUT,
     CONF_THERMOSTAT_BRIDGE_MODE,
     CONF_THERMOSTAT_BRIDGE_TOPIC,
     CONF_TOPIC_PREFIX,
@@ -19,6 +20,7 @@ from .const import (
     DEFAULT_AVAILABILITY_TIMEOUT,
     DEFAULT_COMMAND_TOPIC,
     DEFAULT_GPS_TOPIC,
+    DEFAULT_LIGHT_AVAILABILITY_TIMEOUT,
     DEFAULT_THERMOSTAT_BRIDGE_MODE,
     DEFAULT_THERMOSTAT_BRIDGE_TOPIC,
     DEFAULT_TOPIC_PREFIX,
@@ -29,7 +31,7 @@ from .const import (
 class RVCConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Config flow for the RVC integration."""
 
-    VERSION = 2
+    VERSION = 3
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None):
         """Handle the initial step."""
@@ -89,6 +91,13 @@ class RVCOptionsFlow(config_entries.OptionsFlow):
                     CONF_AVAILABILITY_TIMEOUT,
                     default=_entry_value(
                         CONF_AVAILABILITY_TIMEOUT, DEFAULT_AVAILABILITY_TIMEOUT
+                    ),
+                ): vol.All(vol.Coerce(int), vol.Range(min=0, max=86400)),
+                vol.Required(
+                    CONF_LIGHT_AVAILABILITY_TIMEOUT,
+                    default=_entry_value(
+                        CONF_LIGHT_AVAILABILITY_TIMEOUT,
+                        DEFAULT_LIGHT_AVAILABILITY_TIMEOUT,
                     ),
                 ): vol.All(vol.Coerce(int), vol.Range(min=0, max=86400)),
                 vol.Optional(
