@@ -12,11 +12,13 @@ from .const import (
     CONF_AVAILABILITY_TIMEOUT,
     CONF_COMMAND_TOPIC,
     CONF_GPS_TOPIC,
+    CONF_LIGHT_AVAILABILITY_TIMEOUT,
     CONF_TOPIC_PREFIX,
     DEFAULT_AUTO_DISCOVERY,
     DEFAULT_AVAILABILITY_TIMEOUT,
     DEFAULT_COMMAND_TOPIC,
     DEFAULT_GPS_TOPIC,
+    DEFAULT_LIGHT_AVAILABILITY_TIMEOUT,
     DEFAULT_TOPIC_PREFIX,
     DOMAIN,
     PLATFORMS,
@@ -29,16 +31,26 @@ _LOGGER = logging.getLogger(__name__)
 async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Handle config entry migration for updated defaults."""
     version = entry.version
+    new_options = dict(entry.options)
 
     if version == 1:
-        new_options = dict(entry.options)
         if new_options.get(CONF_AVAILABILITY_TIMEOUT) == DEFAULT_AVAILABILITY_TIMEOUT:
             new_options.pop(CONF_AVAILABILITY_TIMEOUT)
-        hass.config_entries.async_update_entry(entry, version=2, options=new_options)
-        _LOGGER.info(
-            "RVC config entry %s migrated from v1 to v2 (availability timeout defaults)",
-            entry.entry_id,
+        version = 2
+
+    if version == 2:
+        new_options.setdefault(
+            CONF_LIGHT_AVAILABILITY_TIMEOUT,
+            entry.data.get(
+                CONF_LIGHT_AVAILABILITY_TIMEOUT,
+                DEFAULT_LIGHT_AVAILABILITY_TIMEOUT,
+            ),
         )
+        version = 3
+
+    if version != entry.version:
+        hass.config_entries.async_update_entry(entry, version=version, options=new_options)
+        _LOGGER.info("RVC config entry %s migrated to v%s", entry.entry_id, version)
 
     return True
 

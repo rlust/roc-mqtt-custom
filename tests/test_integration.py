@@ -17,6 +17,7 @@ from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import MockConfigEntry, async_fire_time_changed
 
+from custom_components.rvc import async_migrate_entry
 from custom_components.rvc.climate import (
     TEMP_DOWN_SUFFIX,
     TEMP_UP_SUFFIX,
@@ -27,6 +28,7 @@ from custom_components.rvc.const import (
     CONF_AVAILABILITY_TIMEOUT,
     CONF_COMMAND_TOPIC,
     CONF_GPS_TOPIC,
+    CONF_LIGHT_AVAILABILITY_TIMEOUT,
     CONF_THERMOSTAT_BRIDGE_MODE,
     CONF_TOPIC_PREFIX,
     DOMAIN,
@@ -67,9 +69,10 @@ def rvc_entry() -> MockConfigEntry:
             CONF_COMMAND_TOPIC: "node-red/rvc/commands",
             CONF_GPS_TOPIC: "CP/#",
             CONF_AVAILABILITY_TIMEOUT: 300,
+            CONF_LIGHT_AVAILABILITY_TIMEOUT: 0,
             CONF_THERMOSTAT_BRIDGE_MODE: True,
         },
-        version=2,
+        version=3,
     )
 
 
@@ -157,6 +160,97 @@ async def test_config_and_options_flow(hass: HomeAssistant) -> None:
     options = await hass.config_entries.options.async_init(entry.entry_id)
     assert options["type"] == "form"
     assert options["step_id"] == "init"
+    defaults = options["data_schema"]({})
+    assert defaults[CONF_AVAILABILITY_TIMEOUT] == 300
+    assert defaults[CONF_LIGHT_AVAILABILITY_TIMEOUT] == 0
+
+
+@pytest.mark.parametrize(
+    ("version", "options", "expected_options"),
+    [
+        (
+            1,
+            {CONF_AVAILABILITY_TIMEOUT: 300},
+            {CONF_LIGHT_AVAILABILITY_TIMEOUT: 0},
+        ),
+        (
+            2,
+            {CONF_AVAILABILITY_TIMEOUT: 450},
+            {
+                CONF_AVAILABILITY_TIMEOUT: 450,
+                CONF_LIGHT_AVAILABILITY_TIMEOUT: 0,
+            },
+        ),
+        (
+            2,
+            {CONF_LIGHT_AVAILABILITY_TIMEOUT: 900},
+            {CONF_LIGHT_AVAILABILITY_TIMEOUT: 900},
+        ),
+    ],
+)
+async def test_config_entry_migration_adds_independent_light_timeout(
+    hass: HomeAssistant,
+    version: int,
+    options: dict[str, int],
+    expected_options: dict[str, int],
+) -> None:
+    """Old entries gain the light default without changing non-light policy."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={CONF_TOPIC_PREFIX: "RVC"},
+        options=options,
+        version=version,
+    )
+    entry.add_to_hass(hass)
+
+    assert await async_migrate_entry(hass, entry)
+    assert entry.version == 3
+    assert entry.options == expected_options
+
+
+async def test_light_does_not_expire_while_non_light_uses_shared_timeout(
+    hass: HomeAssistant, loaded_entry
+) -> None:
+    """The light-only zero timeout must not disable expiry for other domains."""
+    async_dispatcher_send(
+        hass,
+        SIGNAL_DISCOVERY,
+        {
+            "type": "light",
+            "instance": "35",
+            "payload": {
+                "name": "DC_DIMMER_STATUS_3",
+                "instance": 35,
+                "operating status (brightness)": 50,
+            },
+        },
+    )
+    async_dispatcher_send(
+        hass,
+        SIGNAL_DISCOVERY,
+        {
+            "type": "sensor",
+            "instance": "99",
+            "payload": {
+                "name": "Generic Measurement",
+                "instance": 99,
+                "value": 12,
+            },
+        },
+    )
+    await hass.async_block_till_done()
+
+    light_id = _entity_id(hass, "light", "rvc_light_35")
+    sensor_id = _entity_id(hass, "sensor", "rvc_sensor_99")
+    assert hass.states.get(light_id).state == "on"
+    assert hass.states.get(sensor_id).state == "12"
+
+    with patch("custom_components.rvc.availability.time.time", return_value=time.time() + 301):
+        async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=301), fire_all=True)
+        await hass.async_block_till_done()
+
+    assert hass.states.get(light_id).state == "on"
+    assert hass.states.get(sensor_id).state == STATE_UNAVAILABLE
 
 
 async def test_dynamic_sensor_availability_and_sentinel(hass: HomeAssistant, loaded_entry) -> None:

@@ -10,11 +10,13 @@ from .const import (
     CONF_AVAILABILITY_TIMEOUT,
     CONF_COMMAND_TOPIC,
     CONF_GPS_TOPIC,
+    CONF_LIGHT_AVAILABILITY_TIMEOUT,
     CONF_TOPIC_PREFIX,
     DEFAULT_AUTO_DISCOVERY,
     DEFAULT_AVAILABILITY_TIMEOUT,
     DEFAULT_COMMAND_TOPIC,
     DEFAULT_GPS_TOPIC,
+    DEFAULT_LIGHT_AVAILABILITY_TIMEOUT,
     DEFAULT_TOPIC_PREFIX,
     DOMAIN,
 )
@@ -41,6 +43,11 @@ async def async_get_config_entry_diagnostics(
             "gps_topic": _entry_option(entry, CONF_GPS_TOPIC, DEFAULT_GPS_TOPIC),
             "availability_timeout": _entry_option(
                 entry, CONF_AVAILABILITY_TIMEOUT, DEFAULT_AVAILABILITY_TIMEOUT
+            ),
+            "light_availability_timeout": _entry_option(
+                entry,
+                CONF_LIGHT_AVAILABILITY_TIMEOUT,
+                DEFAULT_LIGHT_AVAILABILITY_TIMEOUT,
             ),
         }
     }
