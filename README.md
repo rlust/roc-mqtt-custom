@@ -66,6 +66,7 @@ The bridge is responsible for translating these JSON commands into the actual CA
 ## Documentation
 
 - [Thermostat Control — Architecture, Wire Protocol, and Rollout](docs/thermostat_control.md) (v2.4.0+): absolute setpoint/mode/fan control via `thermostat_command_bridge.py`, RV-C THERMOSTAT_COMMAND_1 encoding details, state-cache fill-in, and the safe enablement process.
+- [Restart-safe retained light status](node-red/MAPPED_LIGHT_RETAINED_STATUS_SETUP.md): one-way Node-RED status replay that restores mapped lights after Home Assistant reconnects without creating an MQTT feedback loop.
 
 ## Configuration Options
 
@@ -76,6 +77,7 @@ Use the integration options flow (Settings → Devices & Services → RV-C → C
 - **Command topic** – Where control payloads are published (default `node-red/rvc/commands`).
 - **GPS topic** – Topic filter for CP/GPSDATA messages (default `CP/#`).
 - **Availability timeout** – Seconds before entities are marked unavailable when no valid telemetry is received (default 300s). A value of `0` disables staleness after the first valid update.
+- **Light availability timeout** – Light-only freshness window (default `0`). Lights still require one valid status after setup, then remain available until the integration reloads or a non-zero timeout expires.
 
 ## Installation
 
