@@ -1,5 +1,33 @@
 # Changelog
 
+## v2.5.4 (2026-08-19) — Restart-safe light status replay
+
+### Added
+
+- Added a source-controlled Node-RED function that retains mapped dimmer status
+  under `RVC/status/light/<instance>`, separate from the raw
+  `RVC/DC_DIMMER_STATUS_3/<instance>` input. The separate namespace prevents a
+  retained message from feeding back into its own input while allowing Home
+  Assistant to recover genuine last-known state after a restart or integration
+  reload.
+- Added a dependency-free Node regression suite and CI coverage for the exact
+  mapped-instance allowlist, topic rewrite, payload preservation, and rejection
+  of raw, gap, and non-light topics.
+- Added deployment, verification, and rollback instructions for the retained
+  status flow. Command topics remain non-retained.
+
+## v2.5.3 (2026-08-18) — Independent light availability
+
+### Fixed
+
+- Added a light-specific availability timeout. Its default of `0` preserves the
+  requirement for a first genuine status message, then prevents event-driven
+  dimmers from expiring merely because their state has not changed.
+- Migrated existing entries to config-flow version 3 without changing the
+  shared timeout used by climate, sensors, locks, covers, switches, or GPS.
+- Added options-flow, diagnostics, migration, and Home Assistant-native tests
+  for the light-only behavior.
+
 ## v2.5.2 (2026-08-16) — Home Assistant 2026.8 compatibility
 
 ### Fixed
